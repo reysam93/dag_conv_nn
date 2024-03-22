@@ -96,7 +96,7 @@ class Model():
                 losses_test[epoch] = self._get_loss(X_test, Y_test)
 
             if (epoch == 0 or (epoch+1) % eval_freq == 0) and verb:
-                print(f"Epoch {epoch+1}/{n_epochs} - Loss Train: {losses_train[epoch]:.3f} - Val Loss: {losses_val[epoch]:.3f}", flush=True)
+                print(f"Epoch {epoch+1}/{n_epochs} - Loss Train: {losses_train[epoch]:.6f} - Val Loss: {losses_val[epoch]:.6f}", flush=True)
 
             # Early stopping based on validation loss
             if losses_val[epoch] < best_val_loss:

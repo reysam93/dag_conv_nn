@@ -29,7 +29,6 @@ def create_dag(N, p, weighted=True):
     dag = nx.from_numpy_array(Adj.T, create_using=nx.DiGraph())
     return Adj, dag
 
-
 def compute_Dq(dag: nx.DiGraph, target_node: str, only_diag: bool = True,
                verbose: bool = False) -> np.ndarray:
     """
@@ -61,8 +60,84 @@ def compute_Dq(dag: nx.DiGraph, target_node: str, only_diag: bool = True,
     else:
         return np.diag(path_exists)
 
-
 def compute_GSOs(W, dag):
     N = W.shape[0]
     GSOs = np.array([W @ compute_Dq(dag, i, N) @ la.inv(W) for i in range(N)])
     return GSOs
+
+def create_DAG_fitler(GSOs, norm_coefs=False, ftype='uniform'):
+    """
+    Create a directed acyclic graph (DAG) filter based on the provided graph shift operators (GSOs).
+
+    Args:
+    - GSOs: ndarray, shape (K, N, N), where K is the number of GSOs and N is the number of nodes.
+    - norm_coefs: bool, whether to normalize the filter coefficients.
+    - ftype: str, the type of filter coefficients to generate. Options: 'uniform', 'normal'.
+
+    Returns:
+    - H: ndarray, shape (N, N), the constructed DAG filter.
+    - filt_coefs: ndarray, shape (K,), the filter coefficients used.
+    """
+    # Select GSOs and create GF
+    if ftype == 'uniform':
+        filt_coefs = 2*np.random.rand(GSOs.shape[0]) - 1
+    elif type == 'uniform-pos':
+        filt_coefs = np.random.rand(GSOs.shape[0]) + .1
+    else:
+        filt_coefs = np.random.randn(GSOs.shape[0])
+    
+    if norm_coefs:
+        filt_coefs /= la.norm(filt_coefs, 1)
+
+    H = (filt_coefs[:, None, None] * GSOs).sum(axis=0)
+    return H, filt_coefs 
+
+def create_diff_data(M, GSOs, max_src_node, n_p=.1, n_sources=1, norm_y='l2_norm',
+                     norm_f_coefs=False, ftype='uniform'):    
+    """
+    Create data following a diffusion proces that is modeled via a graph filter
+    for DAGs.
+
+    Args:
+    - M: int, number of samples to generate.
+    - GSOs: ndarray, shape (K, N, N), where K is the number of GSOs and N is the number of nodes.
+    - max_src_node: int, maximum source node index for generating sparse input signals.
+    - n_p: float, standard deviation of noise to add to the output signals. Default is 0.1.
+    - n_sources: int, number of sources to activate in each sparse input signal. Default is 1.
+    - norm_y: str, method for normalizing the output signals Y. Options: 'l2_norm', 'standardize', or None. Default is 'l2_norm'.
+    - norm_f_coefs: bool, whether to normalize the filter coefficients used to generate the output signals.
+    - ftype: str, type of filter coefficients. Options: 'uniform', 'normal'. Default is 'uniform'.
+
+    Returns:
+    - Y: ndarray, shape (M, N, 1), the generated output signals.
+    - X: ndarray, shape (M, N, 1), the generated sparse input signals.
+    """
+    assert (max_src_node >= n_sources), 'Number of sources must be smaller than maximum source node or random'
+
+    # Generate sparse input signals
+    N = GSOs.shape[1]
+    X = np.zeros((M, N))
+    idx = np.random.randint(0, 5, (M, 3))
+    row_idx = np.arange(M).reshape(-1, 1)
+    X[row_idx, idx[:]] = 1  / np.sqrt(n_sources)
+
+    H, _ = create_DAG_fitler(GSOs, norm_f_coefs, ftype='uniform')
+
+    # Generate output signals
+    Y = X @ H.T
+
+    # Normalize output signals if required
+    signal_norm = la.norm(Y, 2, axis=1, keepdims=True)
+    if norm_y == 'l2_norm':
+        Y = Y / signal_norm
+    elif norm_y == 'standarize':
+        Y = (Y - np.mean(Y, axis=1, keepdims=True)) / np.std(Y, axis=1, keepdims=True)
+
+    # Add noise
+    if n_p > 0:
+        noise = np.random.randn(M, N)
+        noise_norm = la.norm(noise, 2, axis=1, keepdims=True)
+        noise = noise * signal_norm * n_p / noise_norm
+        Y = Y + noise         
+
+    return np.expand_dims(Y, axis=2), np.expand_dims(X, axis=2)

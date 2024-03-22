@@ -174,7 +174,7 @@ class DAGConv(nn.Module):
         Returns:
             torch.Tensor: Output tensor after passing through DAGConv layers.
         """
-        for i, conv in enumerate(self.convs[:-1]):
+        for _, conv in enumerate(self.convs[:-1]):
             X = self.act(conv(X, self.GSOs))
 
         X_out = self.convs[-1](X, self.GSOs)
