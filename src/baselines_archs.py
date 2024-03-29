@@ -24,9 +24,10 @@ class GAT(nn.Module):
     """
     Graph Attention Network Class
     """
-    def __init__(self, in_dim, hidden_dim, out_dim, num_heads, gat_params,
+    def __init__(self, in_dim, hidden_dim, out_dim, graph, num_heads, gat_params,
                  act=F.elu, last_act=None):
         super(GAT, self).__init__()
+        self.graph = graph
         self.layer1 = GATConv(in_dim, hidden_dim, num_heads, **gat_params)
         # Be aware that the input dimension is hidden_dim*num_heads since
         # multiple head outputs are concatenated together. Also, only
@@ -35,12 +36,14 @@ class GAT(nn.Module):
         self.act = act
         self.l_act = last_act
 
-    def forward(self, graph, h):
-        h = self.layer1(graph, h)
+    def forward(self, h):
+        if len(h.shape) == 3:
+            h = h.squeeze().T
+        h = self.layer1(self.graph, h)
         # concatenate
         h = h.flatten(1)
         h = self.act(h)
-        h = self.layer2(graph, h).squeeze()
+        h = self.layer2(self.graph, h).squeeze()
         return self.l_act(h) if self.l_act else h
     
 

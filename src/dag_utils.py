@@ -1,6 +1,7 @@
 import numpy as np
 from numpy import linalg as la
 import networkx as nx
+from torch import Tensor
 
 
 def create_dag(N, p, weighted=True):
@@ -27,6 +28,7 @@ def create_dag(N, p, weighted=True):
         Adj[:, colums_sum != 0] /= col_sums_nonzero
 
     dag = nx.from_numpy_array(Adj.T, create_using=nx.DiGraph())
+    assert nx.is_directed_acyclic_graph(dag), "Graph is not a DAG"
     return Adj, dag
 
 def compute_Dq(dag: nx.DiGraph, target_node: str, only_diag: bool = True,
@@ -93,7 +95,7 @@ def create_DAG_fitler(GSOs, norm_coefs=False, ftype='uniform'):
     return H, filt_coefs 
 
 def create_diff_data(M, GSOs, max_src_node, n_p=.1, n_sources=1, norm_y='l2_norm',
-                     norm_f_coefs=False, ftype='uniform'):    
+                     norm_f_coefs=False, src_t='constant', ftype='uniform', torch_tensor=False):    
     """
     Create data following a diffusion proces that is modeled via a graph filter
     for DAGs.
@@ -114,12 +116,24 @@ def create_diff_data(M, GSOs, max_src_node, n_p=.1, n_sources=1, norm_y='l2_norm
     """
     assert (max_src_node >= n_sources), 'Number of sources must be smaller than maximum source node or random'
 
+
+
     # Generate sparse input signals
     N = GSOs.shape[1]
     X = np.zeros((M, N))
-    idx = np.random.randint(0, 5, (M, 3))
+    idx = np.random.randint(0, max_src_node, (M, n_sources))
     row_idx = np.arange(M).reshape(-1, 1)
-    X[row_idx, idx[:]] = 1  / np.sqrt(n_sources)
+
+    # Create random non-zero values
+    if src_t == 'random':
+        pos_samples = np.random.uniform(.5, 1.5, int(n_sources*M/2))
+        neg_samples = np.random.uniform(-1.5, -.5, int(n_sources*M/2))
+        all_samples = np.concatenate((pos_samples, neg_samples))
+        np.random.shuffle(all_samples)
+        values = all_samples.reshape([M, n_sources])
+    else:
+        values = 1  / np.sqrt(n_sources)
+    X[row_idx, idx[:]] = values
 
     H, _ = create_DAG_fitler(GSOs, norm_f_coefs, ftype='uniform')
 
@@ -140,4 +154,8 @@ def create_diff_data(M, GSOs, max_src_node, n_p=.1, n_sources=1, norm_y='l2_norm
         noise = noise * signal_norm * n_p / noise_norm
         Y = Y + noise         
 
-    return np.expand_dims(Y, axis=2), np.expand_dims(X, axis=2)
+    Y, X = np.expand_dims(Y, axis=2), np.expand_dims(X, axis=2)
+    if torch_tensor:
+        return Tensor(Y), Tensor(X)
+    else:
+        return Y, X

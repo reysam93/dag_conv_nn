@@ -27,8 +27,7 @@ class Model():
         fit(X, Y, lr, n_epochs, bs=100, wd=0, optim=torch.optim.Adam, eval_freq=10, patience=100, verb=False): Trains the model using the provided data.
 
     """
-    def __init__(self, arch, loss=torch.nn.MSELoss(reduction='sum'),
-                 device='cpu'):
+    def __init__(self, arch, loss=torch.nn.MSELoss(reduction='mean'), device='cpu'):
         self.arch = arch.to(device)
         self.loss_fn = loss
         self.dev = device
@@ -38,7 +37,31 @@ class Model():
         with torch.no_grad():
             Y_hat = self.arch(X)
             return self.loss_fn(Y_hat, Y).item()
+        
+    def _init_optimizer(self, optim, lr, wd):
+        self.opt = optim(self.arch.parameters(), lr=lr, weight_decay=wd)
 
+    def _train_batches(self, train_dl, iters, optimizer):
+        """
+        Perform multiple training iterations on batches of data.
+        """
+        if iters < 1:
+            return None
+
+        for _ in range(iters):
+            for Xb, Yb in train_dl:
+                Y_hat = self.arch(Xb)
+                loss_train = self.loss_fn(Y_hat, Yb)
+
+                loss_train.backward()
+                optimizer.step()
+                optimizer.zero_grad()
+
+        return loss_train.item()
+
+    def _train_epoch(self, train_dl):
+        return self._train_batches(train_dl, 1, self.opt)
+              
     def fit(self, X, Y, lr, n_epochs, bs=100, wd=0, optim=torch.optim.Adam, eval_freq=10,
               patience=100, verb=False):
         """
@@ -73,25 +96,17 @@ class Model():
         best_val_loss = float('inf')
         cont_stop = 0
         best_weights = deepcopy(self.arch.state_dict())
-        opt = optim(self.arch.parameters(), lr=lr, weight_decay=wd)
         losses_train, losses_val, losses_test = [np.zeros(n_epochs) for _ in range(3)]
 
+        self._init_optimizer(optim, lr, wd)
+
         # Training loop
-        for epoch in range(n_epochs):
+        for epoch in range(n_epochs):            
             self.arch.train()
-
-            for Xb, Yb in train_dl:
-                Y_hat = self.arch(Xb)
-                loss_train = self.loss_fn(Y_hat, Yb)
-
-                loss_train.backward()
-                opt.step()
-                opt.zero_grad()
-
-            # losses_train[i] = loss_train.detach().cpu().item()
-            losses_train[epoch] = loss_train.item()
-            losses_val[epoch] = self._get_loss(X_val, Y_val)
             
+            losses_train[epoch] = self._train_epoch(train_dl)
+            losses_val[epoch] = self._get_loss(X_val, Y_val)
+
             if X_test is not None:
                 losses_test[epoch] = self._get_loss(X_test, Y_test)
 
@@ -123,3 +138,29 @@ class Model():
         norm_Y = np.linalg.norm(Y, axis=0)
         err = (np.linalg.norm(Y_hat - Y, axis=0)/norm_Y)**2
         return err.mean(), err.std()
+
+
+class AlternatingModel(Model):
+    def __init__(self, arch, loss=torch.nn.MSELoss(reduction='mean'), epochs_h=1,
+                 epochs_W=1, device='cpu'):
+        super().__init__(arch, loss, device)
+        self.epochs_h = epochs_h
+        self.epochs_W = epochs_W
+        
+    def _init_optimizer(self, optim, lr, wd):
+        W_params = [layer.W for layer in self.arch.convs]
+        if self.arch.bias:
+            W_params += [layer.b for layer in self.arch.convs]
+
+        h_params = [layer.h for layer in self.arch.convs]
+
+        self.opt_h = optim(h_params, lr=lr, weight_decay=wd)
+        self.opt_W = optim(W_params, lr=lr, weight_decay=wd)
+
+    def _train_epoch(self, train_dl):
+        # Optimization over h
+        self._train_batches(train_dl, self.epochs_h, self.opt_h)
+        # Optimization over W
+        return self._train_batches(train_dl, self.epochs_W, self.opt_W)
+        
+        
