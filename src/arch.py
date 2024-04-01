@@ -224,13 +224,10 @@ class DAGConv(nn.Module):
     Returns:
         torch.Tensor: Output tensor after passing through DAGConv layers.
     """
-    def __init__(self, in_dim: int, hid_dim: int, out_dim: int, n_layers: int,
-                 GSOs: torch.Tensor, bias: bool = True, act = F.relu,
+    def __init__(self, in_dim: int, hid_dim: int, out_dim: int, K: int, n_layers: int,
+                 bias: bool = True, act = F.relu,
                  last_act = None):
         super(DAGConv, self).__init__()
-
-        if len(GSOs.shape) != 3 or GSOs.shape[1] != GSOs.shape[2]:
-            raise ValueError("GSOs tensor must be of shape (K, N, N)")
 
         self.in_d = in_dim
         self.hid_d = hid_dim
@@ -239,9 +236,8 @@ class DAGConv(nn.Module):
         self.l_act =  last_act
         self.n_layers = n_layers
         self.bias = bias
-        self.GSOs = GSOs
 
-        self.convs = self._create_conv_layers(n_layers, GSOs.shape[0], bias)
+        self.convs = self._create_conv_layers(n_layers, K, bias)
         self.n_params = sum(p.numel() for p in self.parameters() if p.requires_grad)
 
     def _create_conv_layers(self, n_layers: int, K: int, bias: bool) -> nn.ModuleList:
@@ -267,13 +263,9 @@ class DAGConv(nn.Module):
             convs.append(DAGConvLayer(self.in_d, self.out_d, K, bias))
 
         return convs
-    
-    def to(self, device):
-        super().to(device)
-        self.GSOs = self.GSOs.to(device)
-        return self
 
-    def forward(self, X):
+
+    def forward(self, X, GSOs):
         """
         Forward pass through the DAGConv layers.
 
@@ -283,10 +275,13 @@ class DAGConv(nn.Module):
         Returns:
             torch.Tensor: Output tensor after passing through DAGConv layers.
         """
-        for _, conv in enumerate(self.convs[:-1]):
-            X = self.act(conv(X, self.GSOs))
+        assert len(GSOs.shape) == 3 and GSOs.shape[1] == GSOs.shape[2], \
+            "GSOs tensor must be of shape (K, N, N)"
 
-        X_out = self.convs[-1](X, self.GSOs)
+        for _, conv in enumerate(self.convs[:-1]):
+            X = self.act(conv(X, GSOs))
+
+        X_out = self.convs[-1](X, GSOs)
         return self.l_act(X_out) if self.l_act else X_out
     
 
@@ -296,12 +291,12 @@ class SF_DAGConv(DAGConv):
     per layer. The model performs convolutional operations via matrix multiplication by GSOs
     that are tailored to DAGs.
     """
-    def __init__(self, in_dim: int, out_dim: int, n_layers: int, GSOs: torch.Tensor,
+    def __init__(self, in_dim: int, out_dim: int, K: int, n_layers: int,
                  bias: bool = True, act = F.relu, last_act = None):
         assert in_dim == out_dim, 'Input and output dimensions must be the same'
 
-        super(SF_DAGConv, self).__init__(in_dim, in_dim, out_dim, n_layers, GSOs, bias, act,
-                                      last_act)
+        super(SF_DAGConv, self).__init__(in_dim, in_dim, out_dim, K, n_layers, bias, act,
+                                         last_act)
         
 
     def _create_conv_layers(self, n_layers: int, K: int, bias: bool) -> nn.ModuleList:

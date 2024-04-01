@@ -4,6 +4,7 @@ from torch.utils.data import TensorDataset, DataLoader
 import numpy as np
 from copy import deepcopy
 
+from src.baselines_archs import MLP
 
 
 class Model():
@@ -23,7 +24,7 @@ class Model():
         dev (str or torch.device): Device on which the model is running.
 
     Methods:
-        _get_loss(X, Y): Computes the loss for a given input-output pair.
+        _get_loss(X, Y, GSO): Computes the loss for a given input-output pair.
         fit(X, Y, lr, n_epochs, bs=100, wd=0, optim=torch.optim.Adam, eval_freq=10, patience=100, verb=False): Trains the model using the provided data.
 
     """
@@ -31,17 +32,18 @@ class Model():
         self.arch = arch.to(device)
         self.loss_fn = loss
         self.dev = device
+        self.MLP_arch = isinstance(arch, MLP)
     
-    def _get_loss(self, X, Y):
+    def _get_loss(self, X, Y, GSO):
         self.arch.eval()
         with torch.no_grad():
-            Y_hat = self.arch(X)
+            Y_hat = self.arch(X) if self.MLP_arch else self.arch(X, GSO)
             return self.loss_fn(Y_hat, Y).item()
         
     def _init_optimizer(self, optim, lr, wd):
         self.opt = optim(self.arch.parameters(), lr=lr, weight_decay=wd)
 
-    def _train_batches(self, train_dl, iters, optimizer):
+    def _train_batches(self, train_dl, GSO, iters, optimizer):
         """
         Perform multiple training iterations on batches of data.
         """
@@ -50,7 +52,7 @@ class Model():
 
         for _ in range(iters):
             for Xb, Yb in train_dl:
-                Y_hat = self.arch(Xb)
+                Y_hat = self.arch(Xb) if self.MLP_arch else self.arch(Xb, GSO)
                 loss_train = self.loss_fn(Y_hat, Yb)
 
                 loss_train.backward()
@@ -59,10 +61,10 @@ class Model():
 
         return loss_train.item()
 
-    def _train_epoch(self, train_dl):
-        return self._train_batches(train_dl, 1, self.opt)
+    def _train_epoch(self, train_dl, GSO):
+        return self._train_batches(train_dl, GSO, 1, self.opt)
               
-    def fit(self, X, Y, lr, n_epochs, bs=100, wd=0, optim=torch.optim.Adam, eval_freq=10,
+    def fit(self, X, Y, GSO, lr, n_epochs, bs=100, wd=0, optim=torch.optim.Adam, eval_freq=10,
               patience=100, verb=False):
         """
         Trains the model using the provided data.
@@ -87,6 +89,7 @@ class Model():
         assert 'val' in X, 'Missing validation data'
 
         # Extract data
+        GSO = GSO.to(self.dev) if not self.MLP_arch else None
         train_ds = TensorDataset(X['train'].to(self.dev), Y['train'].to(self.dev))
         train_dl = DataLoader(train_ds, batch_size=bs)
         X_val, Y_val = X['val'].to(self.dev), Y['val'].to(self.dev)
@@ -104,11 +107,11 @@ class Model():
         for epoch in range(n_epochs):            
             self.arch.train()
             
-            losses_train[epoch] = self._train_epoch(train_dl)
-            losses_val[epoch] = self._get_loss(X_val, Y_val)
+            losses_train[epoch] = self._train_epoch(train_dl, GSO)
+            losses_val[epoch] = self._get_loss(X_val, Y_val, GSO)
 
             if X_test is not None:
-                losses_test[epoch] = self._get_loss(X_test, Y_test)
+                losses_test[epoch] = self._get_loss(X_test, Y_test, GSO)
 
             if (epoch == 0 or (epoch+1) % eval_freq == 0) and verb:
                 print(f"Epoch {epoch+1}/{n_epochs} - Loss Train: {losses_train[epoch]:.6f} - Val Loss: {losses_val[epoch]:.6f}", flush=True)
@@ -129,11 +132,13 @@ class Model():
         self.arch.load_state_dict(best_weights)
         return {'train': losses_train, 'val': losses_val, 'test': losses_test}
 
-    def test(self, X, Y):
+    def test(self, X, Y, GSO=None):
         X = X.to(self.dev)
         Y = Y.to(self.dev)
-
-        Y_hat = self.arch(X).cpu().detach().numpy().squeeze().T
+        GSO = GSO.to(self.dev) if not self.MLP_arch else None
+        
+        Y_hat = self.arch(X) if self.MLP_arch else self.arch(X, GSO)
+        Y_hat = Y_hat.cpu().detach().numpy().squeeze().T
         Y = Y.cpu().detach().numpy().squeeze().T
         norm_Y = np.linalg.norm(Y, axis=0)
         err = (np.linalg.norm(Y_hat - Y, axis=0)/norm_Y)**2
@@ -157,10 +162,10 @@ class AlternatingModel(Model):
         self.opt_h = optim(h_params, lr=lr, weight_decay=wd)
         self.opt_W = optim(W_params, lr=lr, weight_decay=wd)
 
-    def _train_epoch(self, train_dl):
+    def _train_epoch(self, train_dl, GSO):
         # Optimization over h
-        self._train_batches(train_dl, self.epochs_h, self.opt_h)
+        self._train_batches(train_dl, GSO, self.epochs_h, self.opt_h)
         # Optimization over W
-        return self._train_batches(train_dl, self.epochs_W, self.opt_W)
+        return self._train_batches(train_dl, GSO, self.epochs_W, self.opt_W)
         
         
