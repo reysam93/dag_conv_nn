@@ -95,7 +95,8 @@ def create_DAG_fitler(GSOs, norm_coefs=False, ftype='uniform'):
     return H, filt_coefs 
 
 def create_diff_data(M, GSOs, max_src_node, n_p=.1, n_sources=1, norm_y='l2_norm',
-                     norm_f_coefs=False, src_t='constant', ftype='uniform', torch_tensor=False):    
+                     norm_f_coefs=False, src_t='constant', ftype='uniform', torch_tensor=False,
+                     mask_sources=False):    
     """
     Create data following a diffusion proces that is modeled via a graph filter
     for DAGs.
@@ -153,6 +154,12 @@ def create_diff_data(M, GSOs, max_src_node, n_p=.1, n_sources=1, norm_y='l2_norm
         noise_norm = la.norm(noise, 2, axis=1, keepdims=True)
         noise = noise * signal_norm * n_p / noise_norm
         Y = Y + noise         
+
+    # Mask output values related to source nodes to avoid learning trivial mapping
+    if mask_sources:
+        mask = np.ones_like(Y)
+        mask[:,:max_src_node] = 0
+        Y = Y*mask
 
     Y, X = np.expand_dims(Y, axis=2), np.expand_dims(X, axis=2)
     if torch_tensor:

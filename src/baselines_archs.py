@@ -1,4 +1,5 @@
 from dgl.nn import GATConv, GraphConv
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -63,6 +64,71 @@ class GAT(nn.Module):
         h = self.layer2(graph, h).squeeze()
         return self.l_act(h) if self.l_act else h
     
+
+class MyGCNNLayer(nn.Module):
+    def __init__(self, in_dim, out_dim, bias):
+        super(MyGCNNLayer, self).__init__()
+        self.in_d = in_dim
+        self.out_d = out_dim
+        self._init_parameters(bias)
+
+    def _init_parameters(self, bias):
+        # Initialize weight parameter tensor
+        self.W = nn.Parameter(torch.empty((self.in_d, self.out_d)))
+        nn.init.xavier_uniform_(self.W)
+
+        # Initialize bias parameter tensor if bias is True
+        if bias:
+            self.b = nn.Parameter(torch.empty(self.out_d))
+            nn.init.constant_(self.b.data, 0.)
+        else:
+            self.b = None
+
+    def forward(self, X, A):
+        X_out = A @ (X @ self.W)
+
+        if self.b is not None:
+            return X_out + self.b[None,:]
+        else:
+            return X_out
+
+class MyGCNN(nn.Module):
+    """
+    2-layer Graph Convolutional Neural Network Class as in Kipf
+    """
+    def __init__(self, in_dim, hid_dim, out_dim, n_layers=2, act=F.relu, last_act=None,
+                 bias=True, dropout=0):
+        super(MyGCNN, self).__init__()
+        self.in_d = in_dim
+        self.hid_d = hid_dim
+        self.out_d = out_dim
+        self.dropout = nn.Dropout(p=dropout)
+        self.act = act
+        self.l_act = last_act
+
+        self.convs = self._create_conv_layers(n_layers, bias)
+        self.n_params = sum(p.numel() for p in self.parameters() if p.requires_grad)
+
+    def _create_conv_layers(self, n_layers: int, bias: bool) -> nn.ModuleList:
+        convs = nn.ModuleList()
+        
+        if n_layers > 1:
+            convs.append(MyGCNNLayer(self.in_d, self.hid_d, bias))
+            for _ in range(n_layers - 2):
+                convs.append(MyGCNNLayer(self.hid_d, self.hid_d, bias))
+            convs.append(MyGCNNLayer(self.hid_d, self.out_d, bias))
+        else:
+            convs.append(MyGCNNLayer(self.in_d, self.out_d, bias))
+
+        return convs
+    
+    def forward(self, X, A):
+        for _, conv in enumerate(self.convs[:-1]):
+            X = self.act(conv(X, A))
+            X = self.dropout(X)
+        X_out = self.convs[-1](X, A)
+        return self.l_act(X_out) if self.l_act else X_out
+
 
 class GCNN_2L(nn.Module):
     """

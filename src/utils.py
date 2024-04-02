@@ -8,7 +8,7 @@ from pandas import DataFrame
 from IPython.display import display
 
 from src.arch import DAGConv, FB_DAGConv, SF_DAGConv
-from src.baselines_archs import GCNN_2L, GCNN, GAT, MLP
+from src.baselines_archs import GCNN_2L, GCNN, GAT, MLP, MyGCNN
 import src.dag_utils as dagu
 
 
@@ -18,6 +18,11 @@ def get_graph_data(d_dat_p):
     W_inf = la.inv(W)
     GSOs = np.array([(W * dagu.compute_Dq(dag, i, d_dat_p['N'])) @ W_inf for i in range(d_dat_p['N'])])
     return Adj, W, GSOs
+
+def kipf_GSO(S):
+    S_hat = S + np.eye(S.shape[0])
+    Deg_sqrt_inv = np.diag(1/np.sqrt(S_hat.sum(axis=0)))
+    return Deg_sqrt_inv @ S_hat @ Deg_sqrt_inv
 
 
 def select_GSO(arc_p, GSOs, sel_GSOs, W, Adj):
@@ -32,44 +37,51 @@ def select_GSO(arc_p, GSOs, sel_GSOs, W, Adj):
         return Tensor(GSOs[:arc_p['n_gsos']])
     elif arc_p['GSO'] == 'last_GSOs':
         return Tensor(GSOs[-arc_p['n_gsos']:])
+    elif arc_p['GSO'] == 'W-dgl':
+        return dgl.from_networkx(nx.from_numpy_array(W)).add_self_loop()
+    elif arc_p['GSO'] == 'A-dgl':
+        return dgl.from_networkx(nx.from_numpy_array(Adj)).add_self_loop()
     elif arc_p['GSO'] == 'W':
-        return dgl.from_networkx(nx.from_numpy_array(W)).add_self_loop()  #.to(device)
+        return Tensor(kipf_GSO(W))
     elif arc_p['GSO'] == 'A':
-        return dgl.from_networkx(nx.from_numpy_array(Adj)).add_self_loop()  #.to(device)
+        return Tensor(kipf_GSO(Adj))
     else:
         return None
     
 
 def instantiate_arch(arc_p, K):
     if arc_p['arch'] in [DAGConv, FB_DAGConv]:
-        return arc_p['arch'](arc_p['in_dim'], arc_p['hid_dim'], arc_p['out_dim'], K, arc_p['L'])
+        return arc_p['arch'](arc_p['in_dim'], arc_p['hid_dim'], arc_p['out_dim'], K, arc_p['L'],
+                             last_act=arc_p['l_act'])
 
     elif arc_p['arch'] == SF_DAGConv:
-        return arc_p['arch'](arc_p['in_dim'], arc_p['out_dim'], K, arc_p['L'])
+        return arc_p['arch'](arc_p['in_dim'], arc_p['out_dim'], K, arc_p['L'], last_act=arc_p['l_act'])
 
-    elif arc_p['arch'] == GCNN_2L:
-        return arc_p['arch'](arc_p['in_dim'], arc_p['hid_dim'], arc_p['out_dim'])
+    elif arc_p['arch'] in [GCNN_2L, MyGCNN]:
+        return arc_p['arch'](arc_p['in_dim'], arc_p['hid_dim'], arc_p['out_dim'],
+                             last_act=arc_p['l_act'])
     
     elif arc_p['arch'] == GCNN:
-        return arc_p['arch'](arc_p['in_dim'], arc_p['hid_dim'], arc_p['out_dim'], arc_p['L'])
+        return arc_p['arch'](arc_p['in_dim'], arc_p['hid_dim'], arc_p['out_dim'], arc_p['L'],
+                             last_act=arc_p['l_act'])
     
     elif arc_p['arch'] == GAT:
         return arc_p['arch'](arc_p['in_dim'], arc_p['hid_dim'], arc_p['out_dim'], arc_p['n_heads'],
-                             arc_p['gat_params'])
+                             arc_p['gat_params'], last_act=arc_p['l_act'])
 
     elif arc_p['arch'] == MLP:
-        return arc_p['arch'](arc_p['in_dim'], arc_p['hid_dim'], arc_p['out_dim'])
+        return arc_p['arch'](arc_p['in_dim'], arc_p['hid_dim'], arc_p['out_dim'], last_act=arc_p['l_act'])
 
     else:
         raise Exception('Unknown architecture type')
     
 
-def display_data(exps_leg, err, std, time):
+def display_data(exps_leg, err, std, time, metric_label='Err'):
     data = {
         'Exp': exps_leg,
-        'Mean Err': err.mean(axis=0),
-        'Median Err': np.median(err, axis=0),
-        'Mean Std': std.mean(axis=0),
+        f'Mean {metric_label}': err.mean(axis=0),
+        f'Median {metric_label}': np.median(err, axis=0),
+        'Mean Std': std.mean(axis=0) if std is not None else None,
         'time': time.mean(axis=0)
     }
     df = DataFrame(data)
