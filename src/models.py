@@ -65,7 +65,7 @@ class Model():
         return self._train_batches(train_dl, GSO, 1, self.opt)
               
     def fit(self, X, Y, GSO, lr, n_epochs, bs=100, wd=0, optim=torch.optim.Adam, eval_freq=10,
-              patience=100, verb=False):
+              patience=100, verb=False, track_test_err=False):
         """
         Trains the model using the provided data.
 
@@ -110,7 +110,7 @@ class Model():
             losses_train[epoch] = self._train_epoch(train_dl, GSO)
             losses_val[epoch] = self._get_loss(X_val, Y_val, GSO)
 
-            if X_test is not None:
+            if track_test_err and X_test is not None:
                 losses_test[epoch] = self._get_loss(X_test, Y_test, GSO)
 
             if (epoch == 0 or (epoch+1) % eval_freq == 0) and verb:

@@ -1,6 +1,7 @@
 import networkx as nx
 from torch import Tensor
 import numpy as np
+from numpy import linalg as la
 import dgl
 import matplotlib.pyplot as plt
 from pandas import DataFrame
@@ -8,6 +9,16 @@ from IPython.display import display
 
 from src.arch import DAGConv, FB_DAGConv, SF_DAGConv
 from src.baselines_archs import GCNN_2L, GCNN, GAT, MLP
+import src.dag_utils as dagu
+
+
+def get_graph_data(d_dat_p):
+    Adj, dag = dagu.create_dag(d_dat_p['N'], d_dat_p['p'])
+    W = la.inv(np.eye(d_dat_p['N']) - Adj)
+    W_inf = la.inv(W)
+    GSOs = np.array([(W * dagu.compute_Dq(dag, i, d_dat_p['N'])) @ W_inf for i in range(d_dat_p['N'])])
+    return Adj, W, GSOs
+
 
 def select_GSO(arc_p, GSOs, sel_GSOs, W, Adj):
     if arc_p['GSO'] == 'GSOs':
@@ -65,8 +76,8 @@ def display_data(exps_leg, err, std, time):
     display(df)
 
 
-def plot_results(err, x_values, exps, xlabel, ylabel='Mean Err', figsize=(10,6), skip_idx=[],
-                 logy=True, n_cols=3):
+def plot_results(err, x_values, exps, xlabel, ylabel='Mean Err', figsize=(8,5), skip_idx=[],
+                 logy=True, n_cols=3, ylim_bottom=1e-2, ylim_top=1):
     plt.figure(figsize=figsize)
 
     for i, exp in enumerate(exps):
@@ -77,8 +88,18 @@ def plot_results(err, x_values, exps, xlabel, ylabel='Mean Err', figsize=(10,6),
         else:
             plt.plot(x_values, err[:,i], exp['fmt'], label=exp['leg'], linewidth=2.0)
     
+    plt.ylim(ylim_bottom, ylim_top)
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
     plt.legend(ncol=n_cols)
     plt.grid(True)
     plt.show()
+
+def load_data(file_name):
+    data = np.load(file_name, allow_pickle=True)
+    err = data['err']
+    std = data['std']
+    times = data['times']
+    Exps = data['exp']
+    xvals = data['xvals']
+    return err, std, times, Exps, xvals
