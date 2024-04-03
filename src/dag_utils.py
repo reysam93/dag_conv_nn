@@ -32,7 +32,7 @@ def create_dag(N, p, weighted=True):
     return Adj, dag
 
 def compute_Dq(dag: nx.DiGraph, target_node: str, only_diag: bool = True,
-               verbose: bool = False) -> np.ndarray:
+               verbose: bool = False, ordered: bool = False) -> np.ndarray:
     """
     Compute Dq, the frequency response matrix of the GSO associated with node q, based on the
     existence of paths from each node to the target node.
@@ -50,7 +50,8 @@ def compute_Dq(dag: nx.DiGraph, target_node: str, only_diag: bool = True,
     target_idx = ord(target_node) - ord('a') if isinstance(target_node, str) else target_node
     
     path_exists = np.zeros(N)
-    for i in range(target_idx+1):
+    max_node = target_idx + 1 if ordered else N 
+    for i in range(max_node):
         path_exists[i] = nx.has_path(dag, i, target_idx)
     
     if verbose:

@@ -57,11 +57,11 @@ def instantiate_arch(arc_p, K):
     elif arc_p['arch'] == SF_DAGConv:
         return arc_p['arch'](arc_p['in_dim'], arc_p['out_dim'], K, arc_p['L'], last_act=arc_p['l_act'])
 
-    elif arc_p['arch'] in [GCNN_2L, MyGCNN]:
+    elif arc_p['arch'] == GCNN_2L:
         return arc_p['arch'](arc_p['in_dim'], arc_p['hid_dim'], arc_p['out_dim'],
                              last_act=arc_p['l_act'])
     
-    elif arc_p['arch'] == GCNN:
+    elif arc_p['arch'] in [GCNN, MyGCNN]:
         return arc_p['arch'](arc_p['in_dim'], arc_p['hid_dim'], arc_p['out_dim'], arc_p['L'],
                              last_act=arc_p['l_act'])
     
