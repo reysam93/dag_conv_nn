@@ -156,13 +156,12 @@ def create_diff_data(M, GSOs, max_src_node, n_p=.1, n_sources=1, norm_y='l2_norm
         noise = noise * signal_norm * n_p / noise_norm
         Y = Y + noise         
 
-    # Mask output values related to source nodes to avoid learning trivial mapping
     if mask_sources:
         mask = np.ones_like(Y)
         mask[:,:max_src_node] = 0
         Y = Y*mask
 
-    Y, X = np.expand_dims(Y, axis=2), np.expand_dims(X, axis=2)
+    Y, X = np.expand_dims(Y, axis=2), np.expand_dims(X, axis=len(X.shape))
     if torch_tensor:
         return Tensor(Y), Tensor(X)
     else:

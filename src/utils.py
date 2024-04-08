@@ -26,25 +26,33 @@ def kipf_GSO(S):
 
 
 def select_GSO(arc_p, GSOs, sel_GSOs, W, Adj):
+    transp = 'transp' in arc_p.keys() and arc_p['transp']
+    transp_GSO = lambda GSO, transp: np.transpose(GSO, axes=[0,2,1]) if transp else GSO
+
+    # Original GSOs
     if arc_p['GSO'] == 'GSOs':
-        return Tensor(GSOs)
+        return Tensor(transp_GSO(GSOs, transp))
     elif arc_p['GSO'] == 'sel_GSOs':
-        return Tensor(sel_GSOs)
+        return Tensor(transp_GSO(sel_GSOs, transp))
     elif arc_p['GSO'] == 'rnd_GSOs':
         rnd_idx = np.random.choice(GSOs.shape[1], size=arc_p['n_gsos'], replace=False)
-        return  Tensor(GSOs[rnd_idx])
+        return  Tensor(transp_GSO(GSOs[rnd_idx], transp))
     elif arc_p['GSO'] == 'first_GSOs':
-        return Tensor(GSOs[:arc_p['n_gsos']])
+        return Tensor(transp_GSO(GSOs[:arc_p['n_gsos']], transp))
     elif arc_p['GSO'] == 'last_GSOs':
-        return Tensor(GSOs[-arc_p['n_gsos']:])
+        return Tensor(transp_GSO(GSOs[-arc_p['n_gsos']:], transp))
     elif arc_p['GSO'] == 'W-dgl':
-        return dgl.from_networkx(nx.from_numpy_array(W)).add_self_loop()
+        W_aux = W.T if transp else W
+        return dgl.from_networkx(nx.from_numpy_array(W_aux)).add_self_loop()
     elif arc_p['GSO'] == 'A-dgl':
-        return dgl.from_networkx(nx.from_numpy_array(Adj)).add_self_loop()
+        Adj_aux = Adj.T if transp else Adj
+        return dgl.from_networkx(nx.from_numpy_array(Adj_aux)).add_self_loop()
     elif arc_p['GSO'] == 'W':
-        return Tensor(kipf_GSO(W))
+        W_aux = W.T if transp else W
+        return Tensor(kipf_GSO(W_aux))
     elif arc_p['GSO'] == 'A':
-        return Tensor(kipf_GSO(Adj))
+        Adj_aux = Adj.T if transp else Adj
+        return Tensor(kipf_GSO(Adj_aux))
     else:
         return None
     
@@ -70,7 +78,9 @@ def instantiate_arch(arc_p, K):
                              arc_p['gat_params'], last_act=arc_p['l_act'])
 
     elif arc_p['arch'] == MLP:
-        return arc_p['arch'](arc_p['in_dim'], arc_p['hid_dim'], arc_p['out_dim'], last_act=arc_p['l_act'])
+        n_layers = arc_p['L'] if 'L' in arc_p.keys() else 2
+        return arc_p['arch'](arc_p['in_dim'], arc_p['hid_dim'], arc_p['out_dim'], n_layers=n_layers, 
+                             last_act=arc_p['l_act'])
 
     else:
         raise Exception('Unknown architecture type')
@@ -107,11 +117,15 @@ def plot_results(err, x_values, exps, xlabel, ylabel='Mean Err', figsize=(8,5), 
     plt.grid(True)
     plt.show()
 
-def load_data(file_name):
+def load_data(file_name, src_id=False):
     data = np.load(file_name, allow_pickle=True)
-    err = data['err']
-    std = data['std']
     times = data['times']
     Exps = data['exp']
     xvals = data['xvals']
-    return err, std, times, Exps, xvals
+    if not src_id:
+        err = data['err']
+        std = data['std']
+        return err, std, times, Exps, xvals
+    else:
+        acc = data['acc']
+        return acc, times, Exps, xvals

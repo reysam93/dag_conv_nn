@@ -146,24 +146,24 @@ class Model():
         
 
 class SrcIdModel(Model):
-    def __init__(self, arch, loss=torch.nn.BCELoss(reduction='mean'), device='cpu'):
+    def __init__(self, arch, loss=torch.nn.CrossEntropyLoss(reduction='mean'), device='cpu'):
         super(SrcIdModel, self).__init__(arch, loss, device)
     
-    def test(self, X, Y, GSO=None):
+    def test(self, X, labels, GSO=None):
         X = X.to(self.dev)
-        Y = Y.to(self.dev)
+        labels = labels.to(self.dev)
         GSO = GSO.to(self.dev) if not self.MLP_arch else None
-        
-        # Get list of true source nodes
-        Y = Y.cpu().detach().numpy().squeeze().T
-        src_indx = np.argmax(Y, axis=0)
 
-        # Get list of estimated source nodes
+        # Get list of true source nodes
+        labels = labels.cpu().detach().numpy().squeeze()
+
+        # Get estimated labels
         Y_hat = self.arch(X) if self.MLP_arch else self.arch(X, GSO)
-        Y_hat = Y_hat.cpu().detach().numpy().squeeze().T
-        src_indx_hat = np.argmax(Y_hat, axis=0)
+        Y_hat = Y_hat.cpu().detach().numpy().squeeze()
+        labels_hat = np.argmax(Y_hat, axis=1)
         
-        return np.sum(src_indx == src_indx_hat)/src_indx.shape[0]
+        return np.sum(labels == labels_hat)/labels.shape[0]
+
 
 class AlternatingModel(Model):
     def __init__(self, arch, loss=torch.nn.MSELoss(reduction='mean'), epochs_h=1,
