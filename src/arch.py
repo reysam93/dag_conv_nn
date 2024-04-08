@@ -190,12 +190,22 @@ class FB_DAGConvLayer(nn.Module):
             torch.Tensor: Output tensor after convolution of size (N, out_dim).
         """
         assert len(X.shape) == 3, 'Input shape must be (M, N, F_in)'
-        # XW = X @ self.W        # Shape: (K, N, F_out )
-        # Expand GSOs and W to match the shape of X:
-        XW = X @ self.W.unsqueeze(1)     # Shape: (K, M, N, F_out)
-        GSOs_exp = GSOs.unsqueeze(1)     # Shape: (K, 1, N, N)
-        X_out = GSOs_exp @ XW            # Shape: (K, M, N, F_out)
-        X_out = torch.sum(X_out, dim=0)  # Shape: (M, N, F_out)
+
+        M = X.shape[0]
+        N = X.shape[1]
+        F_in = self.W.shape[1]
+        F_out = self.W.shape[2]
+        K = self.W.shape[0]
+        # X_out = torch.zeros((M, N, F_out), device=X.device)
+        # for k in range(K):
+        #     X_out +=  GSOs[k] @ X @ self.W[k]
+        
+        # Shape of X after reshaping: (N, F_in*M)
+        X_out = GSOs @ X.permute(1, 0, 2).contiguous().view(N, -1)  # Shape: (K, N, F_in*M)
+        # Recover original shape (K, M, N, F_in) and adapt for batch multiplication
+        X_out = X_out.view(K, N, M, F_in).permute(0, 2, 1, 3).reshape(K, N*M, F_in)
+        # Shape after the multiplicaiton: (K, N*M, Fout)
+        X_out = torch.bmm(X_out, self.W).sum(dim=0).reshape(M, N, F_out)
 
         # Add bias if available
         if self.b is not None:
