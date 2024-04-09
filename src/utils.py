@@ -8,14 +8,20 @@ from pandas import DataFrame
 from IPython.display import display
 
 from src.arch import DAGConv, FB_DAGConv, SF_DAGConv
-from src.baselines_archs import GCNN_2L, GCNN, GAT, MLP, MyGCNN
+from src.baselines_archs import GCNN_2L, GCNN, GAT, MLP, MyGCNN, GraphSAGE, GIN
 import src.dag_utils as dagu
 
 
-def get_graph_data(d_dat_p):
+def get_graph_data(d_dat_p, get_Psi=False):
     Adj, dag = dagu.create_dag(d_dat_p['N'], d_dat_p['p'])
     W = la.inv(np.eye(d_dat_p['N']) - Adj)
     W_inf = la.inv(W)
+
+    if get_Psi:
+        Psi = np.array([dagu.compute_Dq(dag, i, d_dat_p['N']) for i in range(d_dat_p['N'])]).T
+        GSOs = np.array([(W * Psi[:,i]) @ W_inf for i in range(d_dat_p['N'])])
+        return Adj, W, GSOs, Psi
+    
     GSOs = np.array([(W * dagu.compute_Dq(dag, i, d_dat_p['N'])) @ W_inf for i in range(d_dat_p['N'])])
     return Adj, W, GSOs
 
@@ -81,7 +87,11 @@ def instantiate_arch(arc_p, K):
         n_layers = arc_p['L'] if 'L' in arc_p.keys() else 2
         return arc_p['arch'](arc_p['in_dim'], arc_p['hid_dim'], arc_p['out_dim'], n_layers=n_layers, 
                              last_act=arc_p['l_act'])
-
+    
+    elif arc_p['arch'] in [GraphSAGE, GIN]:
+        n_layers = arc_p['L'] if 'L' in arc_p.keys() else 2
+        return arc_p['arch'](arc_p['in_dim'], arc_p['hid_dim'], arc_p['out_dim'], n_layers=n_layers, 
+                             aggregator=arc_p['agg'], last_act=arc_p['l_act'])
     else:
         raise Exception('Unknown architecture type')
     

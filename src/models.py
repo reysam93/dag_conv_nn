@@ -7,6 +7,38 @@ from copy import deepcopy
 from src.baselines_archs import MLP
 
 
+class LinDAGRegModel():
+    def __init__(self, W, Psi):
+        self.h = np.zeros((Psi.shape[0]))
+        self.W = W
+        self.W_inv = np.linalg.inv(self.W)
+        self.Psi = Psi
+
+    def fit(self, X, Y):
+        if isinstance(X, torch.Tensor):
+            X = X.numpy()
+            Y = Y.numpy()
+
+        M = X.shape[0]
+        X_freq = self.W_inv @ X.squeeze().T
+        Zm = np.array([self.W @ np.diag(X_freq[:,m]) @ self.Psi for m in range(M)])
+        ZZ = (Zm.transpose(0, 2, 1) @ Zm).sum(axis=0)
+        Zy = (Zm.transpose(0, 2, 1) @ Y).sum(axis=0).squeeze()
+        self.h = np.linalg.inv(ZZ) @ Zy
+
+    def test(self, X, Y):
+        if isinstance(X, torch.Tensor):
+            X = X.numpy()
+            Y = Y.numpy()
+
+        X = X.squeeze().T
+        Y = Y.squeeze().T
+
+        Y_hat = self.W @ np.diag(self.Psi @ self.h) @ self.W_inv @ X
+        norm_Y = np.linalg.norm(Y, axis=0)
+        err = (np.linalg.norm(Y_hat - Y, axis=0)/norm_Y)**2
+        return err.mean(), err.std()
+
 class Model():
     """
     Model class for learning the weights of a neural network architecture in the context of regression problems.
