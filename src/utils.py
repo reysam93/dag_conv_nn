@@ -109,16 +109,16 @@ def display_data(exps_leg, err, std, time, metric_label='Err'):
 
 
 def plot_results(err, x_values, exps, xlabel, ylabel='Mean Err', figsize=(8,5), skip_idx=[],
-                 logy=True, n_cols=3, ylim_bottom=1e-2, ylim_top=1):
+                 logy=True, plot_fn=plt.plot, n_cols=3, ylim_bottom=1e-2, ylim_top=1):
     plt.figure(figsize=figsize)
 
     for i, exp in enumerate(exps):
         if i in skip_idx:
             continue
-        if logy:
-            plt.semilogy(x_values, err[:,i], exp['fmt'], label=exp['leg'], linewidth=2.0)
-        else:
-            plt.plot(x_values, err[:,i], exp['fmt'], label=exp['leg'], linewidth=2.0)
+        if logy and plot_fn is plt.plot:
+            plot_fn = plt.semilogy
+
+        plot_fn(x_values, err[:,i], exp['fmt'], label=exp['leg'], linewidth=2.0)
     
     plt.ylim(ylim_bottom, ylim_top)
     plt.xlabel(xlabel)

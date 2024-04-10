@@ -24,7 +24,12 @@ class LinDAGRegModel():
         Zm = np.array([self.W @ np.diag(X_freq[:,m]) @ self.Psi for m in range(M)])
         ZZ = (Zm.transpose(0, 2, 1) @ Zm).sum(axis=0)
         Zy = (Zm.transpose(0, 2, 1) @ Y).sum(axis=0).squeeze()
-        self.h = np.linalg.inv(ZZ) @ Zy
+
+        if np.linalg.matrix_rank(ZZ) < ZZ.shape[0]:
+            print("WARNING: ZZ is not invertible")
+            self.h = np.linalg.pinv(ZZ) @ Zy
+        else:
+            self.h = np.linalg.inv(ZZ) @ Zy
 
     def test(self, X, Y):
         if isinstance(X, torch.Tensor):
