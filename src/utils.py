@@ -33,6 +33,7 @@ def kipf_GSO(S):
 
 def select_GSO(arc_p, GSOs, sel_GSOs, W, Adj):
     transp = 'transp' in arc_p.keys() and arc_p['transp']
+
     transp_GSO = lambda GSO, transp: np.transpose(GSO, axes=[0,2,1]) if transp else GSO
 
     # Original GSOs
@@ -109,7 +110,8 @@ def display_data(exps_leg, err, std, time, metric_label='Err'):
 
 
 def plot_results(err, x_values, exps, xlabel, ylabel='Mean Err', figsize=(8,5), skip_idx=[],
-                 logy=True, plot_fn=plt.plot, n_cols=3, ylim_bottom=1e-2, ylim_top=1):
+                 logy=True, plot_fn=plt.plot, n_cols=3, ylim_bottom=1e-2, ylim_top=1, std=None,
+                 alpha=.3, prctile_up=None, prctile_low=None):
     plt.figure(figsize=figsize)
 
     for i, exp in enumerate(exps):
@@ -119,7 +121,15 @@ def plot_results(err, x_values, exps, xlabel, ylabel='Mean Err', figsize=(8,5), 
             plot_fn = plt.semilogy
 
         plot_fn(x_values, err[:,i], exp['fmt'], label=exp['leg'], linewidth=2.0)
-    
+
+        if std is not None:
+            up_ci = err[:,i] + std[:,i]
+            low_ci = err[:,i] - std[:,i]
+            plt.fill_between(x_values, low_ci, up_ci, alpha=alpha)
+
+        if prctile_up is not None and prctile_low is not None:
+            plt.fill_between(x_values, prctile_low[:,i], prctile_up[:,i], alpha=alpha)
+
     plt.ylim(ylim_bottom, ylim_top)
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
