@@ -22,7 +22,7 @@ class LinDAGRegModel():
         M = X.shape[0]
         X_freq = self.W_inv @ X.squeeze().T
         Zm = np.array([self.W @ np.diag(X_freq[:,m]) @ self.Psi for m in range(M)])
-        ZZ = (Zm.transpose(0, 2, 1) @ Zm).sum(axis=0)
+        ZZ = (Zm.transpose(0, 2, 1) @ Zm).sum(axis=0)        
         Zy = (Zm.transpose(0, 2, 1) @ Y).sum(axis=0).squeeze()
 
         if np.linalg.matrix_rank(ZZ) < ZZ.shape[0]:
@@ -38,11 +38,26 @@ class LinDAGRegModel():
 
         X = X.squeeze().T
         Y = Y.squeeze().T
-
         Y_hat = self.W @ np.diag(self.Psi @ self.h) @ self.W_inv @ X
+        
         norm_Y = np.linalg.norm(Y, axis=0)
         err = (np.linalg.norm(Y_hat - Y, axis=0)/norm_Y)**2
         return err.mean(), err.std()
+
+
+class LinDAGClassModel(LinDAGRegModel):
+    def test(self, X, labels):
+        if isinstance(X, torch.Tensor):
+            X = X.numpy()
+            labels = labels.numpy()
+
+        X = X.squeeze().T
+        labels = labels.squeeze().T
+        Y_hat = self.W @ np.diag(self.Psi @ self.h) @ self.W_inv @ X
+
+        labels_hat = np.argmax(Y_hat, axis=0)
+        return np.sum(labels == labels_hat) / labels.shape[0]
+
 
 class Model():
     """

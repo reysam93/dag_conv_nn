@@ -31,9 +31,8 @@ def kipf_GSO(S):
     return Deg_sqrt_inv @ S_hat @ Deg_sqrt_inv
 
 
-def select_GSO(arc_p, GSOs, sel_GSOs, W, Adj):
+def select_GSO(arc_p, GSOs, sel_GSOs, W, Adj, sel_GSOs_idx=None):
     transp = 'transp' in arc_p.keys() and arc_p['transp']
-
     transp_GSO = lambda GSO, transp: np.transpose(GSO, axes=[0,2,1]) if transp else GSO
 
     # Original GSOs
@@ -43,6 +42,10 @@ def select_GSO(arc_p, GSOs, sel_GSOs, W, Adj):
         return Tensor(transp_GSO(sel_GSOs, transp))
     elif arc_p['GSO'] == 'rnd_GSOs':
         rnd_idx = np.random.choice(GSOs.shape[0], size=arc_p['n_gsos'], replace=False)
+        return  Tensor(transp_GSO(GSOs[rnd_idx], transp))
+    elif arc_p['GSO'] == 'no_sel_GSOs':
+        non_sel_idx = np.setdiff1d(np.arange(GSOs.shape[0]), sel_GSOs_idx)
+        rnd_idx = np.random.choice(non_sel_idx, size=arc_p['n_gsos'], replace=False)
         return  Tensor(transp_GSO(GSOs[rnd_idx], transp))
     elif arc_p['GSO'] == 'first_GSOs':
         return Tensor(transp_GSO(GSOs[:arc_p['n_gsos']], transp))
@@ -123,8 +126,8 @@ def plot_results(err, x_values, exps, xlabel, ylabel='Mean Err', figsize=(8,5), 
         plot_fn(x_values, err[:,i], exp['fmt'], label=exp['leg'], linewidth=2.0)
 
         if std is not None:
-            up_ci = err[:,i] + std[:,i]
-            low_ci = err[:,i] - std[:,i]
+            up_ci = np.minimum(err[:,i] + std[:,i], 1)
+            low_ci = np.maximum(err[:,i] - std[:,i], 0)
             plt.fill_between(x_values, low_ci, up_ci, alpha=alpha)
 
         if prctile_up is not None and prctile_low is not None:
