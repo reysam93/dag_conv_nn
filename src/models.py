@@ -9,10 +9,10 @@ from src.baselines_archs import MLP
 
 class LinDAGRegModel():
     def __init__(self, W, Psi):
-        self.h = np.zeros((Psi.shape[0]))
         self.W = W
         self.W_inv = np.linalg.inv(self.W)
         self.Psi = Psi
+        self.h = np.zeros((Psi.shape[1]))
 
     def fit(self, X, Y):
         if isinstance(X, torch.Tensor):

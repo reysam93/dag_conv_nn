@@ -42,7 +42,7 @@ def select_GSO(arc_p, GSOs, sel_GSOs, W, Adj):
     elif arc_p['GSO'] == 'sel_GSOs':
         return Tensor(transp_GSO(sel_GSOs, transp))
     elif arc_p['GSO'] == 'rnd_GSOs':
-        rnd_idx = np.random.choice(GSOs.shape[1], size=arc_p['n_gsos'], replace=False)
+        rnd_idx = np.random.choice(GSOs.shape[0], size=arc_p['n_gsos'], replace=False)
         return  Tensor(transp_GSO(GSOs[rnd_idx], transp))
     elif arc_p['GSO'] == 'first_GSOs':
         return Tensor(transp_GSO(GSOs[:arc_p['n_gsos']], transp))
