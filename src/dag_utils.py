@@ -4,7 +4,7 @@ import networkx as nx
 from torch import Tensor
 
 
-def create_dag(N, p, weighted=True):
+def create_dag(N, p, weighted=True, weakly_conn=True, max_tries=25):
     """
     Create a random directed acyclic graph (DAG) with independent edge probability.
 
@@ -16,18 +16,25 @@ def create_dag(N, p, weighted=True):
     Returns:
         tuple[np.ndarray, nx.DiGraph]: Tuple containing the adjacency matrix and the DAG.
     """
-    graph = nx.erdos_renyi_graph(N, p, directed=True)
-    Adj = nx.to_numpy_array(graph)
-    Adj = np.tril(Adj, k=-1) 
+    for _ in range (max_tries):
+        graph = nx.erdos_renyi_graph(N, p, directed=True)
+        Adj = nx.to_numpy_array(graph)
+        Adj = np.tril(Adj, k=-1) 
 
-    if weighted:
-        Weights = np.random.uniform(low=0.2, high=1, size=(N, N))
-        Adj = Adj * Weights
-        colums_sum = Adj.sum(axis=0)
-        col_sums_nonzero = colums_sum[colums_sum != 0]
-        Adj[:, colums_sum != 0] /= col_sums_nonzero
+        if weighted:
+            Weights = np.random.uniform(low=0.2, high=1, size=(N, N))
+            Adj = Adj * Weights
+            colums_sum = Adj.sum(axis=0)
+            col_sums_nonzero = colums_sum[colums_sum != 0]
+            Adj[:, colums_sum != 0] /= col_sums_nonzero
 
-    dag = nx.from_numpy_array(Adj.T, create_using=nx.DiGraph())
+        dag = nx.from_numpy_array(Adj.T, create_using=nx.DiGraph())
+
+        if not weakly_conn or nx.is_weakly_connected(dag):
+            assert nx.is_directed_acyclic_graph(dag), "Graph is not a DAG"
+            return Adj, dag
+    
+    print('WARING: dag is not weakly connected')
     assert nx.is_directed_acyclic_graph(dag), "Graph is not a DAG"
     return Adj, dag
 

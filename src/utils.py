@@ -152,3 +152,19 @@ def load_data(file_name, src_id=False):
     else:
         acc = data['acc']
         return acc, times, Exps, xvals
+    
+def data_to_csv(fname, models, xaxis, error):
+    header = ''
+    data = error
+    
+    data = np.concatenate((xaxis.reshape([xaxis.size, 1]), error), axis=1)
+
+    header = 'xaxis; '  
+
+    for i, model in enumerate(models):
+        header += model['leg']
+        if i < len(models)-1:
+            header += '; '
+
+    np.savetxt(fname, data, delimiter=';', header=header, comments='')
+    print('SAVED as:', fname)
