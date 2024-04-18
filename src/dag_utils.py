@@ -155,6 +155,9 @@ def create_diff_data(M, GSOs, max_src_node, n_p=.1, n_sources=1, norm_y='l2_norm
     elif norm_y == 'standarize':
         Y = (Y - np.mean(Y, axis=1, keepdims=True)) / np.std(Y, axis=1, keepdims=True)
 
+    signal_norm = la.norm(Y, 2, axis=1, keepdims=True)
+    signal_norm[signal_norm == 0] = 1
+
     # Add noise
     if n_p > 0:
         noise = np.random.randn(M, N)
@@ -162,7 +165,7 @@ def create_diff_data(M, GSOs, max_src_node, n_p=.1, n_sources=1, norm_y='l2_norm
         noise = noise * signal_norm * np.sqrt(n_p) / noise_norm
         Yn = Y + noise
     else:
-        Yn = Y
+        Yn = Y      
 
     if mask_sources:
         mask = np.ones_like(Y)
