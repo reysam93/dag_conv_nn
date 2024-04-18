@@ -53,7 +53,7 @@ def select_GSO(arc_p, GSOs, sel_GSOs, W, Adj, sel_GSOs_idx=None):
         return Tensor(transp_GSO(GSOs[-arc_p['n_gsos']:], transp))
     elif arc_p['GSO'] == 'A_pows':
         A_pows = np.array([np.linalg.matrix_power(Adj, k) for k in range(arc_p['K'])])
-        return Tensor(A_pows)
+        return Tensor(transp_GSO(A_pows, transp))
     elif arc_p['GSO'] == 'W-dgl':
         W_aux = W.T if transp else W
         return dgl.from_networkx(nx.from_numpy_array(W_aux)).add_self_loop()
@@ -108,7 +108,8 @@ def display_data(exps_leg, err, std, time, metric_label='Err'):
         'Exp': exps_leg,
         f'Mean {metric_label}': err.mean(axis=0),
         f'Median {metric_label}': np.median(err, axis=0),
-        'Mean Std': std.mean(axis=0) if std is not None else None,
+        # 'Mean Std': std.mean(axis=0) if std is not None else None,
+        'Mean Std': std.mean(axis=0) if len(std) == 2 else std,
         'time': time.mean(axis=0)
     }
     df = DataFrame(data)
@@ -147,7 +148,7 @@ def load_data(file_name, src_id=False):
     data = np.load(file_name, allow_pickle=True)
     times = data['times']
     Exps = data['exp']
-    xvals = data['xvals']
+    xvals = data['xvals'] if 'xvals' in data.keys() else None
     if not src_id:
         err = data['err']
         std = data['std']
