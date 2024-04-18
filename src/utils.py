@@ -51,6 +51,9 @@ def select_GSO(arc_p, GSOs, sel_GSOs, W, Adj, sel_GSOs_idx=None):
         return Tensor(transp_GSO(GSOs[:arc_p['n_gsos']], transp))
     elif arc_p['GSO'] == 'last_GSOs':
         return Tensor(transp_GSO(GSOs[-arc_p['n_gsos']:], transp))
+    elif arc_p['GSO'] == 'A_pows':
+        A_pows = np.array([np.linalg.matrix_power(Adj, k) for k in range(arc_p['K'])])
+        return Tensor(A_pows)
     elif arc_p['GSO'] == 'W-dgl':
         W_aux = W.T if transp else W
         return dgl.from_networkx(nx.from_numpy_array(W_aux)).add_self_loop()
