@@ -102,9 +102,24 @@ def create_DAG_fitler(GSOs, norm_coefs=False, ftype='uniform'):
     H = (filt_coefs[:, None, None] * GSOs).sum(axis=0)
     return H, filt_coefs 
 
-def create_diff_data(M, GSOs, max_src_node, n_p=.1, n_sources=1, norm_y='l2_norm',
+def add_noise(signal, n_p):
+    M, N = signal.shape
+
+    if n_p <= 0:
+        return signal
+    
+    signal_norm = la.norm(signal, 2, axis=1, keepdims=True)
+    signal_norm[signal_norm == 0] = 1
+
+    noise = np.random.randn(M, N)
+    noise_norm = la.norm(noise, 2, axis=1, keepdims=True)
+    noise = noise * signal_norm * np.sqrt(n_p) / noise_norm
+    return signal + noise
+    
+
+def create_diff_data(M, GSOs, max_src_node, n_p_x=0, n_p_y=0, n_sources=1, norm_y='l2_norm',
                      norm_f_coefs=False, src_t='constant', ftype='uniform', torch_tensor=False,
-                     mask_sources=False):    
+                     mask_sources=False, verb=False):    
     """
     Create data following a diffusion proces that is modeled via a graph filter
     for DAGs.
@@ -155,17 +170,14 @@ def create_diff_data(M, GSOs, max_src_node, n_p=.1, n_sources=1, norm_y='l2_norm
     elif norm_y == 'standarize':
         Y = (Y - np.mean(Y, axis=1, keepdims=True)) / np.std(Y, axis=1, keepdims=True)
 
-    signal_norm = la.norm(Y, 2, axis=1, keepdims=True)
-    signal_norm[signal_norm == 0] = 1
-
-    # Add noise
-    if n_p > 0:
-        noise = np.random.randn(M, N)
-        noise_norm = la.norm(noise, 2, axis=1, keepdims=True)
-        noise = noise * signal_norm * np.sqrt(n_p) / noise_norm
-        Yn = Y + noise
-    else:
-        Yn = Y      
+    Xn = add_noise(X, n_p_x)
+    Yn = add_noise(Y, n_p_y)
+   
+    if verb:
+        noise_x_err = (la.norm(Xn - X, 2, axis=1)**2).mean()
+        noise_y_err = (la.norm(Yn - Y, 2, axis=1)**2).mean()
+        print(f'Noise power for X: {n_p_x} --> |Xn - X|^2={noise_x_err:.4f}')
+        print(f'Noise power for Y: {n_p_y} --> |Yn - Y|^2={noise_y_err:.4f}')
 
     if mask_sources:
         mask = np.ones_like(Y)
@@ -175,8 +187,8 @@ def create_diff_data(M, GSOs, max_src_node, n_p=.1, n_sources=1, norm_y='l2_norm
 
     Yn = np.expand_dims(Yn, axis=2)
     Y = np.expand_dims(Y, axis=2)
-    X = np.expand_dims(X, axis=len(X.shape))
+    Xn = np.expand_dims(Xn, axis=len(Xn.shape))
     if torch_tensor:
-        return Tensor(Yn), Tensor(X), Tensor(Y)
+        return Tensor(Yn), Tensor(Xn), Tensor(Y)
     else:
-        return Yn, X, Y
+        return Yn, Xn, Y

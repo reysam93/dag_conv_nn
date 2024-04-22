@@ -109,7 +109,7 @@ def display_data(exps_leg, err, std, time, metric_label='Err'):
         f'Mean {metric_label}': err.mean(axis=0),
         f'Median {metric_label}': np.median(err, axis=0),
         # 'Mean Std': std.mean(axis=0) if std is not None else None,
-        'Mean Std': std.mean(axis=0) if len(std) == 2 else std,
+        'Mean Std': std.mean(axis=0) if len(std.shape) == 2 else std,
         'time': time.mean(axis=0)
     }
     df = DataFrame(data)
