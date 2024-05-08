@@ -45,7 +45,8 @@ def select_GSO(arc_p, GSOs, sel_GSOs, W, Adj, sel_GSOs_idx=None):
         return  Tensor(transp_GSO(GSOs[rnd_idx], transp))
     elif arc_p['GSO'] == 'no_sel_GSOs':
         non_sel_idx = np.setdiff1d(np.arange(GSOs.shape[0]), sel_GSOs_idx)
-        rnd_idx = np.random.choice(non_sel_idx, size=arc_p['n_gsos'], replace=False)
+        replace = len(non_sel_idx) > GSOs.shape[0]
+        rnd_idx = np.random.choice(non_sel_idx, size=arc_p['n_gsos'], replace=replace)
         return  Tensor(transp_GSO(GSOs[rnd_idx], transp))
     elif arc_p['GSO'] == 'first_GSOs':
         return Tensor(transp_GSO(GSOs[:arc_p['n_gsos']], transp))
