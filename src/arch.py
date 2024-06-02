@@ -2,6 +2,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch
 
+from src.baselines_archs import MLP
 
 ###############################   LAYERS   ###############################
 class DAGConvLayer(nn.Module):
@@ -196,9 +197,6 @@ class FB_DAGConvLayer(nn.Module):
         F_in = self.W.shape[1]
         F_out = self.W.shape[2]
         K = self.W.shape[0]
-        # X_out = torch.zeros((M, N, F_out), device=X.device)
-        # for k in range(K):
-        #     X_out +=  GSOs[k] @ X @ self.W[k]
         
         # Shape of X after reshaping: (N, F_in*M)
         X_out = GSOs @ X.permute(1, 0, 2).contiguous().view(N, -1)  # Shape: (K, N, F_in*M)
@@ -212,9 +210,39 @@ class FB_DAGConvLayer(nn.Module):
             return X_out + self.b[None,:]
         else:
             return X_out
-##########################################################################
         
 
+class ADCNLayer(nn.Module):
+    def __init__(self, in_dim, out_dim, filter_coefs, hid_dim_MLP, layers_MLP, bias, act):
+        super().__init__()
+        assert torch.is_tensor(filter_coefs), 'Filter coefficients must be a Tensor'
+        assert len(filter_coefs.shape) == 1, 'Filter coefficients must be 1D Tensor'
+
+        self.h = filter_coefs
+        self.MLP = MLP(in_dim, hid_dim_MLP, out_dim, layers_MLP, bias=bias,
+                       act=act, l_act=None)
+
+    def forward(self, X, GSOs):
+        """
+        Note: the ADCNLayer does not apply a non-linearity at the output of the MLP (l_act is always 
+        set to None). Applying the no-linearity is responsability of the architecture using this layer.
+        """
+        M, N, F_in = X.shape
+        K = GSOs.shape[0]
+
+        assert self.h.shape[0] == 1 or self.h.shape[0] == K, \
+            "Number of GSOs s different than the number of filter coefficients"
+        
+        H = self.h * GSOs if self.h.shape[0] == 1 else self.h.view(K, 1, 1) * GSOs
+        X_out = H @ X.permute(1, 0, 2).contiguous().view(N, -1)     # Shape: (K, N, F_in*M)
+        X_out = X_out.sum(dim=0).view(N, M, F_in).permute(1, 0, 2)  # Shape: (M, N, F_in)
+
+        return self.MLP(X_out)
+
+#########################################################################
+        
+
+###########################   ARCHITECTURES   ###########################
 class DAGConv(nn.Module):
     """
     Implementation of a DAG Convolutional Neural Network architecture.
@@ -229,21 +257,21 @@ class DAGConv(nn.Module):
         GSOs (torch.Tensor): Graph Shift Operators tensor of shape (K, N, N), where K is the number of GSOs and N is the number of nodes.
         bias (bool, optional): Indicates whether to include bias in the convolutional layers. Defaults to True.
         act (function, optional): Activation function to apply after each convolutional layer. Defaults to torch.nn.functional.relu.
-        last_act (function, optional): Activation function to apply after the last convolutional layer. Defaults to None.
+        l_act (function, optional): Activation function to apply after the last convolutional layer. Defaults to None.
 
     Returns:
         torch.Tensor: Output tensor after passing through DAGConv layers.
     """
     def __init__(self, in_dim: int, hid_dim: int, out_dim: int, K: int, n_layers: int,
                  bias: bool = True, act = F.relu,
-                 last_act = None):
+                 l_act = None):
         super(DAGConv, self).__init__()
 
         self.in_d = in_dim
         self.hid_d = hid_dim
         self.out_d = out_dim
         self.act = act
-        self.l_act =  last_act
+        self.l_act =  l_act
         self.n_layers = n_layers
         self.bias = bias
 
@@ -302,11 +330,11 @@ class SF_DAGConv(DAGConv):
     that are tailored to DAGs.
     """
     def __init__(self, in_dim: int, out_dim: int, K: int, n_layers: int,
-                 bias: bool = True, act = F.relu, last_act = None):
+                 bias: bool = True, act = F.relu, l_act = None):
         assert in_dim == out_dim, 'Input and output dimensions must be the same'
 
         super(SF_DAGConv, self).__init__(in_dim, in_dim, out_dim, K, n_layers, bias, act,
-                                         last_act)
+                                         l_act)
         
 
     def _create_conv_layers(self, n_layers: int, K: int, bias: bool) -> nn.ModuleList:
@@ -347,3 +375,42 @@ class FB_DAGConv(DAGConv):
             convs.append(FB_DAGConvLayer(self.in_d, self.out_d, K, bias))
 
         return convs
+    
+
+class ADCN(DAGConv):
+    def __init__(self, in_dim: int, hid_dim: int, out_dim: int, n_layers: int, mlp_layers: int  = 2,
+                 filter_coefs = torch.ones(1), bias: bool = True, act = F.relu, l_act = None, mlp_act = F.relu):
+
+        self.h = filter_coefs if torch.is_tensor(filter_coefs) else torch.Tensor(filter_coefs)
+        self.mlp_layers = mlp_layers
+        self.mlp_act = mlp_act
+
+        super(ADCN, self).__init__(in_dim, hid_dim, out_dim, self.h.shape[0], n_layers, bias,
+                                         act, l_act)
+
+    def _create_conv_layers(self, n_layers: int, K: int, bias: bool) -> nn.ModuleList:
+        """
+        Create convolutional layers for DAGs based on the provided parameters.
+        """
+        convs = nn.ModuleList()
+        
+        if n_layers > 1:
+            convs.append(ADCNLayer(self.in_d, self.hid_d, self.h, self.hid_d, self.mlp_layers,
+                                     bias, self.mlp_act))
+            for _ in range(n_layers - 2):
+                convs.append(ADCNLayer(self.hid_d, self.hid_d, self.h, self.hid_d, self.mlp_layers,
+                                       bias, self.mlp_act))
+            convs.append(ADCNLayer(self.hid_d, self.out_d, self.h, self.hid_d, self.mlp_layers,
+                                   bias, self.mlp_act))
+        else:
+            convs.append(ADCNLayer(self.in_d, self.out_d, self.h, self.hid_d, self.mlp_layers,
+                                   bias, self.mlp_act))
+        return convs
+    
+    def to(self, dev):
+        for conv in self.convs:
+            conv.h = conv.h.to(dev)
+        return super().to(dev)
+
+
+

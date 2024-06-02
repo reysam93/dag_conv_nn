@@ -5,7 +5,7 @@ import torch.nn.functional as F
 
 
 class BaselineArch(nn.Module):
-    def __init__(self, in_dim, hid_dim, out_dim, n_layers=2, act=F.relu, last_act=None,
+    def __init__(self, in_dim, hid_dim, out_dim, n_layers=2, act=F.relu, l_act=None,
                  bias=True, dropout=0):
         super(BaselineArch, self).__init__()
         self.in_d = in_dim
@@ -13,7 +13,7 @@ class BaselineArch(nn.Module):
         self.out_d = out_dim
         self.dropout = nn.Dropout(p=dropout)
         self.act = act
-        self.l_act = last_act
+        self.l_act = l_act
 
         self.convs = self._create_conv_layers(n_layers, bias)
         self.n_params = sum(p.numel() for p in self.parameters() if p.requires_grad)
@@ -69,10 +69,10 @@ class MyGCNN(BaselineArch):
 
 
 class GraphSAGE(BaselineArch):
-    def __init__(self, in_dim, hid_dim, out_dim, n_layers=2, act=F.relu, last_act=None,
+    def __init__(self, in_dim, hid_dim, out_dim, n_layers=2, act=F.relu, l_act=None,
                  bias=True, dropout=0, aggregator='mean'):
         self.aggregator = aggregator
-        super(GraphSAGE, self).__init__(in_dim, hid_dim, out_dim, n_layers, act, last_act,
+        super(GraphSAGE, self).__init__(in_dim, hid_dim, out_dim, n_layers, act, l_act,
                                         bias, dropout)
         
 
@@ -95,28 +95,33 @@ class GraphSAGE(BaselineArch):
 
 
 class GIN(BaselineArch):
-    def __init__(self, in_dim, hid_dim, out_dim, n_layers=2, act=F.relu, last_act=None,
-                 bias=True, dropout=0, aggregator='sum'):
+    def __init__(self, in_dim, hid_dim, out_dim, n_layers=2, act=F.relu, l_act=None,
+                 bias=True, dropout=0, aggregator='sum', mlp_layers = 2):
         self.aggregator = aggregator
-        # self.apply_func = nn.Linear
         self.apply_func = MLP
-        super(GIN, self).__init__(in_dim, hid_dim, out_dim, n_layers, act, last_act,
-                                        bias, dropout)
-        
-
+        self.mlp_layers = mlp_layers
+        super(GIN, self).__init__(in_dim, hid_dim, out_dim, n_layers, act, l_act,
+                                  bias, dropout)
+    
     def _create_conv_layers(self, n_layers: int, bias: bool) -> nn.ModuleList:
         convs = nn.ModuleList()
 
+        # Last actication of apply_func is always set to None because the non-linearity is applyed in
+        # the forward pass of the BaselineArch class
         if n_layers > 1:
-            apply_func = self.apply_func(self.in_d, self.hid_d, self.hid_d, bias=bias)
+            apply_func = self.apply_func(self.in_d, self.hid_d, self.hid_d, bias=bias, act=self.act,
+                                         l_act=None, n_layers=self.mlp_layers)
             convs.append(GINConv(apply_func, self.aggregator))
             for _ in range(n_layers - 2):
-                apply_func = self.apply_func(self.hid_d, self.hid_d, self.hid_d, bias=bias)
+                apply_func = self.apply_func(self.hid_d, self.hid_d, self.hid_d, bias=bias, act=self.act,
+                                             l_act=None, n_layers=self.mlp_layers)
                 convs.append(GINConv(apply_func, self.aggregator))
-            apply_func = self.apply_func(self.hid_d, self.hid_d, self.out_d, bias=bias)
+            apply_func = self.apply_func(self.hid_d, self.hid_d, self.out_d, bias=bias, act=self.act,
+                                         l_act=None, n_layers=self.mlp_layers)
             convs.append(GINConv(apply_func, self.aggregator))
         else:
-            apply_func = self.apply_func(self.in_d, self.hid_d, self.out_d, bias=bias)
+            apply_func = self.apply_func(self.in_d, self.hid_d, self.out_d, bias=bias, act=self.act,
+                                         l_act=None, n_layers=self.mlp_layers)
             convs.append(GINConv(apply_func, self.aggregator))
 
         return convs
@@ -127,14 +132,14 @@ class GIN(BaselineArch):
 
 
 class MLP(nn.Module):
-    def __init__(self, in_dim, hidden_dim, out_dim, n_layers=2, dropout=0., bias=True,
-                 act=F.relu, last_act=None,):
+    def __init__(self, in_dim, hid_dim, out_dim, n_layers=2, dropout=0., bias=True,
+                 act=F.relu, l_act=None):
         super(MLP, self).__init__()
         self.in_d = in_dim
-        self.hid_d = hidden_dim
+        self.hid_d = hid_dim
         self.out_d = out_dim
         self.act = act
-        self.l_act = last_act
+        self.l_act = l_act
         self.dropout = nn.Dropout(p=dropout)
 
         self.lin_layers = self._create_lin_layers(n_layers, bias)
@@ -166,16 +171,20 @@ class GAT(nn.Module):
     """
     Graph Attention Network Class
     """
-    def __init__(self, in_dim, hidden_dim, out_dim, num_heads, gat_params,
-                 act=F.elu, last_act=None):
+    def __init__(self, in_dim, hid_dim, out_dim, num_heads, gat_params,
+                 act=F.elu, l_act=None, n_layers=None):
         super(GAT, self).__init__()
-        self.layer1 = GATConv(in_dim, hidden_dim, num_heads, **gat_params)
+
+        if n_layers is not None:
+            print('WARNING: GAT is implemeted with a fixed number of layers. The argument is ignored.')
+
+        self.layer1 = GATConv(in_dim, hid_dim, num_heads, **gat_params)
         # Be aware that the input dimension is hidden_dim*num_heads since
         # multiple head outputs are concatenated together. Also, only
         # one attention head in the output layer.
-        self.layer2 = GATConv(hidden_dim * num_heads, out_dim, 1, **gat_params)
+        self.layer2 = GATConv(hid_dim * num_heads, out_dim, 1, **gat_params)
         self.act = act
-        self.l_act = last_act
+        self.l_act = l_act
 
     def forward(self, h, graph):
         h = h.transpose(0, 1)
@@ -184,70 +193,4 @@ class GAT(nn.Module):
         h = self.act(h)
         h = self.layer2(graph, h).squeeze(-1).transpose(0, 1)
         return self.l_act(h) if self.l_act else h
-    
 
-
-
-
-class GCNN_2L(nn.Module):
-    """
-    2-layer Graph Convolutional Neural Network Class as in Kipf
-    """
-    def __init__(self, in_dim, hidden_dim, out_dim, act=F.relu, last_act=None,
-                 norm='both', bias=True, dropout=0):
-        super(GCNN_2L, self).__init__()
-        self.layer1 = GraphConv(in_dim, hidden_dim, bias=bias, norm=norm)
-        self.layer2 = GraphConv(hidden_dim, out_dim, bias=bias, norm=norm)
-        self.dropout = nn.Dropout(p=dropout)
-        self.act = act
-        self.l_act = last_act
-
-    def forward(self, h, graph):
-        h = h.transpose(0, 1)
-        h = self.layer1(graph, h)        
-        h = self.act(h)
-        h = self.dropout(h)
-        h = self.layer2(graph, h).transpose(1, 0)
-        return self.l_act(h) if self.l_act else h
-    
-
-class GCNN(nn.Module):
-    """
-    Graph Convolutional Neural Network Class as in Kipf
-    """
-    def __init__(self, in_dim, hidden_dim, out_dim, n_layers=2, act=F.relu,
-                 last_act=None, norm='both', bias=True, dropout=0):
-        super(GCNN, self).__init__()
-                
-        self.in_d = in_dim
-        self.hid_d = hidden_dim
-        self.out_d = out_dim
-        self.dropout = nn.Dropout(p=dropout)
-        self.n_layers = n_layers
-        self.act = act
-        self.l_act = last_act
-        self.convs = self._create_conv_layers(n_layers, bias, norm)
-        self.n_params = sum(p.numel() for p in self.parameters() if p.requires_grad)
-
-
-    def _create_conv_layers(self, n_layers: int, bias: bool, norm: str) -> nn.ModuleList:
-        convs = nn.ModuleList()
-
-        if n_layers > 1:
-            convs.append(GraphConv(self.in_d, self.hid_d, bias=bias, norm=norm))
-            for _ in range(n_layers - 2):
-                convs.append(GraphConv(self.hid_d, self.hid_d, bias=bias, norm=norm))
-            convs.append(GraphConv(self.hid_d, self.out_d, bias=bias, norm=norm))
-        else:
-            convs.append(GraphConv(self.in_d, self.out_d, bias=bias, norm=norm))
-
-        return convs
-
-    def forward(self, h, graph):
-        h = h.transpose(0,1)
-        for _, conv in enumerate(self.convs[:-1]):
-            h = self.act(conv(graph, h))
-            h = self.dropout(h)
-
-        h = self.convs[-1](graph, h).transpose(1, 0)
-        return self.l_act(h) if self.l_act else h

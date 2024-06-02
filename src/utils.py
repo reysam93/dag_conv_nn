@@ -7,8 +7,8 @@ import matplotlib.pyplot as plt
 from pandas import DataFrame
 from IPython.display import display
 
-from src.arch import DAGConv, FB_DAGConv, SF_DAGConv
-from src.baselines_archs import GCNN_2L, GCNN, GAT, MLP, MyGCNN, GraphSAGE, GIN
+from src.arch import DAGConv, FB_DAGConv, ADCN
+from src.baselines_archs import GAT, MLP, MyGCNN, GraphSAGE, GIN
 import src.dag_utils as dagu
 
 
@@ -72,36 +72,17 @@ def select_GSO(arc_p, GSOs, sel_GSOs, W, Adj, sel_GSOs_idx=None):
     
 
 def instantiate_arch(arc_p, K):
+    args = arc_p['args']
     if arc_p['arch'] in [DAGConv, FB_DAGConv]:
-        return arc_p['arch'](arc_p['in_dim'], arc_p['hid_dim'], arc_p['out_dim'], K, arc_p['L'],
-                             last_act=arc_p['l_act'])
+        args['K'] = K
 
-    elif arc_p['arch'] == SF_DAGConv:
-        return arc_p['arch'](arc_p['in_dim'], arc_p['out_dim'], K, arc_p['L'], last_act=arc_p['l_act'])
-
-    elif arc_p['arch'] == GCNN_2L:
-        return arc_p['arch'](arc_p['in_dim'], arc_p['hid_dim'], arc_p['out_dim'],
-                             last_act=arc_p['l_act'])
-    
-    elif arc_p['arch'] in [GCNN, MyGCNN]:
-        return arc_p['arch'](arc_p['in_dim'], arc_p['hid_dim'], arc_p['out_dim'], arc_p['L'],
-                             last_act=arc_p['l_act'])
-    
     elif arc_p['arch'] == GAT:
-        return arc_p['arch'](arc_p['in_dim'], arc_p['hid_dim'], arc_p['out_dim'], arc_p['n_heads'],
-                             arc_p['gat_params'], last_act=arc_p['l_act'])
+        args = {k: v for k, v in args.items() if k not in ['bias', 'n_layers']}
 
-    elif arc_p['arch'] == MLP:
-        n_layers = arc_p['L'] if 'L' in arc_p.keys() else 2
-        return arc_p['arch'](arc_p['in_dim'], arc_p['hid_dim'], arc_p['out_dim'], n_layers=n_layers, 
-                             last_act=arc_p['l_act'])
-    
-    elif arc_p['arch'] in [GraphSAGE, GIN]:
-        n_layers = arc_p['L'] if 'L' in arc_p.keys() else 2
-        return arc_p['arch'](arc_p['in_dim'], arc_p['hid_dim'], arc_p['out_dim'], n_layers=n_layers, 
-                             aggregator=arc_p['agg'], last_act=arc_p['l_act'])
-    else:
-        raise Exception('Unknown architecture type')
+    elif arc_p['arch'] not in [ADCN, MyGCNN, MLP, GraphSAGE, GIN]:
+        raise ValueError('Unknown architecture type')
+
+    return arc_p['arch'](**args)
     
 
 def display_data(exps_leg, err, std, time, metric_label='Err'):
