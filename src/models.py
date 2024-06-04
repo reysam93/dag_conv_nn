@@ -155,6 +155,8 @@ class Model():
 
         self._init_optimizer(optim, lr, wd)
 
+        # TODO: Try an scheduler?
+
         # Training loop
         for epoch in range(n_epochs):            
             self.arch.train()
@@ -168,6 +170,7 @@ class Model():
             if (epoch == 0 or (epoch+1) % eval_freq == 0) and verb:
                 print(f"Epoch {epoch+1}/{n_epochs} - Loss Train: {losses_train[epoch]:.6f} - Val Loss: {losses_val[epoch]:.6f}", flush=True)
 
+            # TODO: this is not going to work well for src id!
             # Early stopping based on validation loss
             if losses_val[epoch] < best_val_loss:
                 best_val_loss = losses_val[epoch]
@@ -193,6 +196,7 @@ class Model():
         Y_hat = Y_hat.cpu().detach().numpy().squeeze().T
         Y = Y.cpu().detach().numpy().squeeze().T
         norm_Y = np.linalg.norm(Y, axis=0)
+        norm_Y[norm_Y == 0] = 1
         err = (np.linalg.norm(Y_hat - Y, axis=0)/norm_Y)**2
         return err.mean(), err.std()
         
