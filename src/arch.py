@@ -232,10 +232,11 @@ class ADCNLayer(nn.Module):
 
         assert self.h.shape[0] == 1 or self.h.shape[0] == K, \
             "Number of GSOs s different than the number of filter coefficients"
-        
+    
         H = self.h * GSOs if self.h.shape[0] == 1 else self.h.view(K, 1, 1) * GSOs
-        X_out = H @ X.permute(1, 0, 2).contiguous().view(N, -1)     # Shape: (K, N, F_in*M)
-        X_out = X_out.sum(dim=0).view(N, M, F_in).permute(1, 0, 2)  # Shape: (M, N, F_in)
+        H = H.sum(dim=0)
+        X_out = H @ X.permute(1, 0, 2).contiguous().view(N, -1)     # Shape: (N, F_in*M)
+        X_out = X_out.view(N, M, F_in).permute(1, 0, 2)  # Shape: (M, N, F_in)
 
         return self.MLP(X_out)
 
