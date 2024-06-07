@@ -190,20 +190,24 @@ class FB_DAGConvLayer(nn.Module):
         Returns:
             torch.Tensor: Output tensor after convolution of size (N, out_dim).
         """
-        assert len(X.shape) == 3, 'Input shape must be (M, N, F_in)'
+        assert len(X.shape) == 3 or len(X.shape) == 2, 'Input shape must be (M, N, F_in) or (N, F_in)'
 
-        M = X.shape[0]
-        N = X.shape[1]
         F_in = self.W.shape[1]
         F_out = self.W.shape[2]
         K = self.W.shape[0]
-        
-        # Shape of X after reshaping: (N, F_in*M)
-        X_out = GSOs @ X.permute(1, 0, 2).contiguous().view(N, -1)  # Shape: (K, N, F_in*M)
-        # Recover original shape (K, M, N, F_in) and adapt for batch multiplication
-        X_out = X_out.view(K, N, M, F_in).permute(0, 2, 1, 3).reshape(K, N*M, F_in)
-        # Shape after the multiplicaiton: (K, N*M, Fout)
-        X_out = torch.bmm(X_out, self.W).sum(dim=0).reshape(M, N, F_out)
+        if len(X.shape) == 3:  # XW.shape: M x N x 1
+            M = X.shape[0]
+            N = X.shape[1]
+            
+            # Shape of X after reshaping: (N, F_in*M)
+            X_out = GSOs @ X.permute(1, 0, 2).contiguous().view(N, -1)  # Shape: (K, N, F_in*M)
+            # Recover original shape (K, M, N, F_in) and adapt for batch multiplication
+            X_out = X_out.view(K, N, M, F_in).permute(0, 2, 1, 3).reshape(K, N*M, F_in)
+            # Shape after the multiplicaiton: (K, N*M, Fout)
+            X_out = torch.bmm(X_out, self.W).sum(dim=0).reshape(M, N, F_out)
+        else:
+            # GSO: KxNxN,  X: NxFin, W: FinxFout --> X_out: NxFout
+            X_out = (GSOs @ X @ self.W).sum(dim=0)
 
         # Add bias if available
         if self.b is not None:
@@ -227,17 +231,21 @@ class ADCNLayer(nn.Module):
         Note: the ADCNLayer does not apply a non-linearity at the output of the MLP (l_act is always 
         set to None). Applying the no-linearity is responsability of the architecture using this layer.
         """
-        M, N, F_in = X.shape
         K = GSOs.shape[0]
 
+        assert len(X.shape) == 3 or len(X.shape) == 2, 'Input shape must be (M, N, F_in) or (N, F_in)'
         assert self.h.shape[0] == 1 or self.h.shape[0] == K, \
             "Number of GSOs s different than the number of filter coefficients"
     
         H = self.h * GSOs if self.h.shape[0] == 1 else self.h.view(K, 1, 1) * GSOs
         H = H.sum(dim=0)
-        X_out = H @ X.permute(1, 0, 2).contiguous().view(N, -1)     # Shape: (N, F_in*M)
-        X_out = X_out.view(N, M, F_in).permute(1, 0, 2)  # Shape: (M, N, F_in)
 
+        if len(X.shape) == 3:  # XW.shape: M x N x 1
+            M, N, F_in = X.shape
+            X_out = H @ X.permute(1, 0, 2).contiguous().view(N, -1)     # Shape: (N, F_in*M)
+            X_out = X_out.view(N, M, F_in).permute(1, 0, 2)  # Shape: (M, N, F_in)
+        else:
+            X_out = H @ X
         return self.MLP(X_out)
 
 #########################################################################
