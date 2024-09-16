@@ -6,6 +6,7 @@ from copy import deepcopy
 
 from src.baselines_archs import MLP
 
+from src.baselines.dagnn import DAGNN
 
 class LinDAGRegModel():
     def __init__(self, W, Psi):
@@ -41,6 +42,7 @@ class LinDAGRegModel():
         Y_hat = self.W @ np.diag(self.Psi @ self.h) @ self.W_inv @ X
         
         norm_Y = np.linalg.norm(Y, axis=0)
+        norm_Y[norm_Y == 0] = 1
         err = (np.linalg.norm(Y_hat - Y, axis=0)/norm_Y)**2
         return err.mean(), err.std()
 
@@ -85,6 +87,7 @@ class Model():
         self.loss_fn = loss
         self.dev = device
         self.MLP_arch = isinstance(arch, MLP)
+        self.req_features = isinstance(arch, DAGNN)
     
     def _get_loss(self, X, Y, GSO):
         self.arch.eval()
@@ -104,7 +107,15 @@ class Model():
 
         for _ in range(iters):
             for Xb, Yb in train_dl:
-                Y_hat = self.arch(Xb) if self.MLP_arch else self.arch(Xb, GSO)
+                if self.req_features:
+                    GSO.x = Xb
+                    Y_hat = self.arch(GSO)
+                elif self.MLP_arch:
+                    Y_hat = self.arch(Xb)
+                else:
+                    Y_hat = self.arch(Xb, GSO)
+
+                # Y_hat = self.arch(Xb) if self.MLP_arch else self.arch(Xb, GSO)
                 loss_train = self.loss_fn(Y_hat, Yb)
 
                 loss_train.backward()
