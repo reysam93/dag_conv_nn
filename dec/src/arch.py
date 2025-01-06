@@ -423,26 +423,150 @@ class ADCN(DAGConv):
 
 
 
-class FB_altDAGConv(DAGConv):
-    """
-    Implementation of a DAG Convolutional Neural Network architecture using a bank of filters
-    per layer. The model performs convolutional operations via matrix multiplication by GSOs
-    that are tailored to DAGs.
-    """        
 
-    def _create_conv_layers(self, n_layers: int, K: int, bias: bool) -> nn.ModuleList:
+class SharedMLPSum(nn.Module):
+    def __init__(self, n_inputs, input_dim, hidden_dims, output_dim):
         """
-        Create convolutional layers for DAGs based on the provided parameters.
+        Args:
+            n_inputs: Number of input vectors to process in parallel
+            input_dim: Dimension of each input vector
+            hidden_dims: List of hidden layer dimensions
+            output_dim: Output dimension
         """
-        convs = nn.ModuleList()
+        super(SharedMLPSum, self).__init__()
+        self.n_inputs = n_inputs
         
-        if n_layers > 1:
-            convs.append(FB_AltenrnateConvLayer(self.in_d, self.hid_d, K, bias))
-            for _ in range(n_layers - 2):
-                convs.append(FB_AltenrnateConvLayer(self.hid_d, self.hid_d, K, bias))
-            convs.append(FB_AltenrnateConvLayer(self.hid_d, self.out_d, K, bias))
-        else:
-            convs.append(FB_AltenrnateConvLayer(self.in_d, self.out_d, K, bias))
+        # Create single shared MLP
+        self.shared_mlp = self._create_mlp(input_dim, hidden_dims, output_dim)
+        
+        # Calculate number of parameters once during initialization
+        self.n_params = sum(p.numel() for p in self.shared_mlp.parameters())
 
-        return convs
+
+
+    def _create_mlp(self, input_dim, hidden_dims, output_dim):
+        layers = []
+        
+        # Input layer
+        prev_dim = input_dim
+        
+        # Hidden layers
+        for hidden_dim in hidden_dims:
+            layers.append(nn.Linear(prev_dim, hidden_dim))
+            layers.append(nn.ReLU())
+            prev_dim = hidden_dim
+            
+        # Output layer
+        layers.append(nn.Linear(prev_dim, output_dim))
+        
+        return nn.Sequential(*layers)
+
+    def forward(self, inputs, GSO):
+        """
+        Forward pass of the shared MLP architecture
+        
+        Args:
+            inputs: Input tensor of shape [num_signals, num_nodes, 1]
+            GSO: Graph Shift Operator tensor
+            
+        Returns:
+            Output tensor of shape [num_signals, num_nodes, 1]
+        """
+        u = []
+        n_signals = inputs.shape[0]
+        GSO = GSO.clone().detach()
+
+        # Process each signal
+        for i in range(n_signals):
+            x_i = inputs[i]
+            gso_x_inputs = []
+            
+            # Apply each GSO filter
+            for j in range(GSO.shape[0]):
+                gso_j = GSO[j,:,:]
+                gso_x = gso_j.float() @ x_i
+                gso_x_inputs.append(gso_x.T)
+
+            # Pass through shared MLP and sum
+            outputs = [self.shared_mlp(x) for x in gso_x_inputs]
+            tmp = torch.stack(outputs).sum(dim=0)
+            u.append(tmp.squeeze(0))
+
+        return torch.stack(u).unsqueeze(2)
+
+
+
+
+
+class ParallelMLPSum(nn.Module):
+    def __init__(self, n_inputs, input_dim, hidden_dims, output_dim):
+        """
+        Args:
+            n_inputs: Number of input vectors to process in parallel
+            input_dim: Dimension of each input vector
+            hidden_dims: List of hidden layer dimensions
+            output_dim: Output dimension
+        """
+        super(ParallelMLPSum, self).__init__()
+        
+        self.n_inputs = n_inputs
+
+
+
+        # Create n separate MLPs with same architecture but different parameters
+        self.mlps = nn.ModuleList([
+            self._create_mlp(input_dim, hidden_dims, output_dim) 
+            for _ in range(n_inputs)
+        ])
+
+        self.n_params = 0
+
+    def _create_mlp(self, input_dim, hidden_dims, output_dim):
+        layers = []
+        
+        # Input layer
+        prev_dim = input_dim
+        
+        # Hidden layers
+        for hidden_dim in hidden_dims:
+            layers.append(nn.Linear(prev_dim, hidden_dim))
+            layers.append(nn.ReLU())
+            prev_dim = hidden_dim
+            
+        # Output layer
+        layers.append(nn.Linear(prev_dim, output_dim))
+        
+        return nn.Sequential(*layers)
+
+    def forward(self, inputs, GSO):
+        """
+        Args:
+            inputs: List/Tuple of n input tensors, each of shape [batch_size, input_dim]
+        Returns:
+            Sum of outputs from all MLPs
+        """
+        # assert len(inputs) == self.n_inputs, f"Expected {self.n_inputs} inputs, got {len(inputs)}"
+        
+        u = []
+        train_signals = inputs # Shape: [num_signals, num_nodes, 1]
+        n_signals = train_signals.shape[0]
+        GSO = GSO.clone().detach()
+        for i in range(n_signals):
+            x_i = train_signals[i]  
+            gso_x_inputs = []
+            for j in range(GSO.shape[0]):  
+                gso_j = GSO[j,:,:]  
+                gso_x = gso_j.float() @ x_i  
+                gso_x_inputs.append(gso_x.T)
+
+            outputs = [mlp(x) for mlp, x in zip(self.mlps, gso_x_inputs)]
+            tmp = torch.stack(outputs).sum(dim=0)
+            u.append(tmp.squeeze(0))
+
+
+        return torch.stack(u).unsqueeze(2)
+
+
+
+
 
