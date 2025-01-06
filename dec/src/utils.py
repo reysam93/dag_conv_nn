@@ -8,11 +8,11 @@ import matplotlib.pyplot as plt
 from pandas import DataFrame
 from IPython.display import display
 
-from src.arch import DAGConv, FB_DAGConv, ADCN
+from src.arch import DAGConv, FB_DAGConv, ADCN, ParallelMLPSum, SharedMLPSum
 from src.baselines_archs import GAT, MLP, MyGCNN, GraphSAGE, GIN
 import src.dag_utils as dagu
-
-from src.DAGNN import DAGNN, DVAE
+from src.DAGNN import DVAE, DAGNN
+# from src.baselines.dagnn import DAGNN
 from torch_geometric.data import Data
 
 
@@ -91,13 +91,50 @@ def instantiate_arch(arc_p, K):
     elif arc_p['arch'] == GAT:
         args = {k: v for k, v in args.items() if k not in ['bias', 'n_layers']}
 
-    elif arc_p['arch'] == DAGNN:
-        return arc_p['arch'](arc_p['emb_dim'], arc_p['hidden_dim'],arc_p['out_dim'], arc_p['max_n'],
-            arc_p['nvt'], arc_p['START_TYPE'], arc_p['END_TYPE'], hs = arc_p['hs'], nz = arc_p['nz'], num_nodes = arc_p['max_n'], agg=arc_p['agg'], num_layers = arc_p['num_layers'],
-            bidirectional = arc_p['bidirectional'], out_wx = 0, out_pool_all= 0, out_pool= 'max', dropout= 0)
-
     elif arc_p['arch'] == DVAE:
-        return arc_p['arch'](hs = arc_p['hs'], bidirectional =arc_p['bidirectional'])
+        args1 = {}
+        args1['max_n'] = arc_p['max_n'] 
+        args1['nvt'] = arc_p['nvt'] 
+        args1['START_TYPE'] = arc_p['START_TYPE'] 
+        args1['END_TYPE'] = arc_p['END_TYPE'] 
+        args1['hs'] = arc_p['hs'] 
+        args1['nz'] = arc_p['nz'] 
+        args1['bidirectional'] = arc_p['bidirectional'] 
+        args1['vid'] = arc_p['vid'] 
+        
+        return arc_p['arch'](**args1)
+
+    elif arc_p['arch'] == DAGNN:
+        args2 = {}
+        args2['emb_dim'] = arc_p['emb_dim'] 
+        args2['hidden_dim'] = arc_p['hidden_dim'] 
+        args2['out_dim'] = arc_p['out_dim'] 
+        args2['max_n'] = arc_p['max_n'] 
+        args2['nvt'] = arc_p['nvt'] 
+        args2['START_TYPE'] = arc_p['START_TYPE'] 
+        args2['END_TYPE'] = arc_p['END_TYPE'] 
+        args2['hs'] = arc_p['hs'] 
+        args2['nz'] = arc_p['nz'] 
+        args2['num_layers'] = arc_p['num_layers'] 
+
+        args2['bidirectional'] = arc_p['bidirectional'] 
+        args2['agg'] = arc_p['agg'] 
+        args2['out_wx'] = arc_p['out_wx'] 
+        args2['out_pool_all'] = arc_p['out_pool_all'] 
+        args2['out_pool'] = arc_p['out_pool'] 
+        args2['dropout'] = arc_p['dropout'] 
+        args2['num_nodes'] = arc_p['num_nodes'] 
+
+        return arc_p['arch'](**args2)
+
+    elif arc_p['arch'] in [ParallelMLPSum, SharedMLPSum]:
+        args3 = {}
+        args3['n_inputs'] = arc_p['n_inputs'] 
+        args3['input_dim'] = arc_p['input_dim'] 
+        args3['hidden_dims'] = arc_p['hidden_dims'] 
+        args3['output_dim'] = arc_p['output_dim'] 
+
+        return arc_p['arch'](**args3)
 
     elif arc_p['arch'] not in [ADCN, MyGCNN, MLP, GraphSAGE, GIN]:
         raise ValueError('Unknown architecture type')
