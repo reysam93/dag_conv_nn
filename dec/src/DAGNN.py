@@ -714,7 +714,6 @@ class AttnConv(MessagePassing):
 
 
 
-
 class DVAE(nn.Module):
     def __init__(self, max_n, nvt, START_TYPE, END_TYPE, hs=501, nz=56, bidirectional=False, vid=True):
         super(DVAE, self).__init__()
