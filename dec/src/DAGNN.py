@@ -715,188 +715,217 @@ class AttnConv(MessagePassing):
 
 
 
-
 class DVAE(nn.Module):
-    def __init__(self, hs=64, bidirectional=False):
+    def __init__(self, max_n, nvt, START_TYPE, END_TYPE, hs=501, nz=56, bidirectional=False, vid=True):
         super(DVAE, self).__init__()
-        self.hs = hs  # Hidden state size of each vertex
-        self.bidir = bidirectional  # Whether to use bidirectional encoding
+        self.max_n = max_n  # maximum number of vertices
+        self.nvt = nvt  # number of vertex types
+        self.START_TYPE = START_TYPE
+        self.END_TYPE = END_TYPE
+        self.hs = hs  # hidden state size of each vertex
+        self.nz = nz  # size of latent representation z
+        self.gs = hs  # size of graph state
+        self.bidir = bidirectional  # whether to use bidirectional encoding
+        self.vid = vid
         self.device = None
-        self.loss1 = torch.nn.MSELoss(reduction='mean')
-        self.vs = hs  # Vertex state size
+        self.n_params = 0
 
-        # Encoder GRU
-        self.grue_forward = nn.GRUCell(1, hs)  # Input size is 1 (scalar value)
-        if self.bidir:
-            self.grue_backward = nn.GRUCell(1, hs)
-
-        # Gate and mapper layers
-        self.gate_forward = nn.Sequential(
-            nn.Linear(self.vs, hs),
-            nn.Sigmoid()
-        )
-        self.mapper_forward = nn.Sequential(
-            nn.Linear(self.vs, hs, bias=False),
-        )
-        if self.bidir:
-            self.gate_backward = nn.Sequential(
-                nn.Linear(self.vs, hs),
-                nn.Sigmoid()
-            )
-            self.mapper_backward = nn.Sequential(
-                nn.Linear(self.vs, hs, bias=False),
-            )
-
-        # Regression layer to predict scalar values
-        if self.bidir:
-            self.regression_layer = nn.Linear(2 * self.hs, 1)
+        if self.vid:
+            self.vs = hs + max_n  # vertex state size = hidden state + vid
         else:
-            self.regression_layer = nn.Linear(self.hs, 1)
+            self.vs = hs
 
-        # Activation functions
+        # 0. encoding-related
+        self.grue_forward = nn.GRUCell(nvt, hs)  # encoder GRU
+        self.grue_backward = nn.GRUCell(nvt, hs)  # backward encoder GRU
+        self.fc1 = nn.Linear(self.gs, nz)  # latent mean
+        # self.fc2 = nn.Linear(self.gs, nz)  # latent logvar
+
+        # 1. decoding-related
+        self.grud = nn.GRUCell(nvt, hs)  # decoder GRU
+        # self.fc3 = nn.Linear(nz, hs)  # from latent z to initial hidden state h0
+        self.add_vertex = nn.Sequential(
+                nn.Linear(hs, hs * 2),
+                nn.ReLU(),
+                nn.Linear(hs * 2, nvt)
+                )  # which type of new vertex to add f(h0, hg)
+        self.add_edge = nn.Sequential(
+                nn.Linear(hs * 2, hs * 4), 
+                nn.ReLU(), 
+                nn.Linear(hs * 4, 1)
+                )  # whether to add edge between v_i and v_new, f(hvi, hnew)
+
+        # 2. gate-related
+        self.gate_forward = nn.Sequential(
+                nn.Linear(self.vs, hs), 
+                nn.Sigmoid()
+                )
+        self.gate_backward = nn.Sequential(
+                nn.Linear(self.vs, hs), 
+                nn.Sigmoid()
+                )
+        self.mapper_forward = nn.Sequential(
+                nn.Linear(self.vs, hs, bias=False),
+                )  # disable bias to ensure padded zeros also mapped to zeros
+        self.mapper_backward = nn.Sequential(
+                nn.Linear(self.vs, hs, bias=False), 
+                )
+
+        # 3. bidir-related, to unify sizes
+        if self.bidir:
+            self.hv_unify = nn.Sequential(
+                    nn.Linear(hs * 2, hs), 
+                    )
+            self.hg_unify = nn.Sequential(
+                    nn.Linear(self.gs * 2, self.gs), 
+                    )
+
+        # 4. other
         self.relu = nn.ReLU()
         self.sigmoid = nn.Sigmoid()
         self.tanh = nn.Tanh()
-
-
-    def _collate_fn(self, G):
-        return [copy.deepcopy(g) for g in G]
+        self.logsoftmax1 = nn.LogSoftmax(1)
 
     def get_device(self):
         if self.device is None:
             self.device = next(self.parameters()).device
         return self.device
-
+    
     def _get_zeros(self, n, length):
-        return torch.zeros(n, length).to(self.get_device())  # Get a zero tensor
+        return torch.zeros(n, length).to(self.get_device()) # get a zero hidden state
 
     def _get_zero_hidden(self, n=1):
-        return self._get_zeros(n, self.hs)  # Get a zero hidden state
+        return self._get_zeros(n, self.hs) # get a zero hidden state
+
+    def _one_hot(self, idx, length):
+        if type(idx) in [list, range]:
+            if idx == []:
+                return None
+            idx = torch.LongTensor(idx).unsqueeze(0).t()
+            x = torch.zeros((len(idx), length)).scatter_(1, idx, 1).to(self.get_device())
+        else:
+            idx = torch.LongTensor([idx]).unsqueeze(0)
+            x = torch.zeros((1, length)).scatter_(1, idx, 1).to(self.get_device())
+        return x
 
     def _gated(self, h, gate, mapper):
         return gate(h) * mapper(h)
 
-    def _propagate_to(self, G, v, propagator, H=None, hidden_states=None, reverse=False):
-        G_valid = [g for g in G if g.vcount() > v]
-        if len(G_valid) == 0:
+    def _collate_fn(self, G):
+        return [g.copy() for g in G]
+
+    def _propagate_to(self, G, v, propagator, H=None, reverse=False):
+        # propagate messages to vertex index v for all graphs in G
+        # return the new messages (states) at v
+        G = [g for g in G if g.vcount() > v]
+        if len(G) == 0:
             return
         if H is not None:
             idx = [i for i, g in enumerate(G) if g.vcount() > v]
             H = H[idx]
-
-        # Get scalar values of node v for each graph
-        scalar_values = [g.vs[v]['scalar_value'] for g in G_valid]
-        X = torch.tensor(scalar_values, dtype=torch.float32).unsqueeze(1).to(self.get_device())
+        v_values = [g.vs[v]['scalar_value'] for g in G]
+        X = torch.tensor(v_values, dtype=torch.float).unsqueeze(1)
+        X = X.to(self.get_device())
 
         if reverse:
-            H_name = 'H_backward'
-            H_pred = []
-            for i, g in enumerate(G_valid):
-                successors = g.successors(v)
-                h_list = [hidden_states[i][x]['H_backward'] for x in successors if x in hidden_states[i]]
-                H_pred.append(h_list)
+            H_name = 'H_backward'  # name of the hidden states attribute
+            H_pred = [[g.vs[x][H_name] for x in g.successors(v)] for g in G]
+            if self.vid:
+                vids = [self._one_hot(g.successors(v), self.max_n) for g in G]
             gate, mapper = self.gate_backward, self.mapper_backward
         else:
-            H_name = 'H_forward'
-            H_pred = []
-            for i, g in enumerate(G_valid):
-                predecessors = g.predecessors(v)
-                h_list = [hidden_states[i][x]['H_forward'] for x in predecessors if x in hidden_states[i]]
-                H_pred.append(h_list)
+            H_name = 'H_forward'  # name of the hidden states attribute
+            H_pred = [[x for x in g.predecessors(v)] for g in G]
+            # print(H_pred)
+            H_pred = [[g.vs[x][H_name] for x in g.predecessors(v)] for g in G]
+            if self.vid:
+                vids = [self._one_hot(g.predecessors(v), self.max_n) for g in G]
             gate, mapper = self.gate_forward, self.mapper_forward
+        if self.vid:
+            H_pred = [[torch.cat([x[i], y[i:i+1]], 1) for i in range(len(x))] for x, y in zip(H_pred, vids)]
 
-        # If H is not provided, use gated sum of predecessors' states
         if H is None:
-            H = []
-            for h_list in H_pred:
-                if len(h_list) == 0:
-                    h_sum = self._get_zero_hidden()  # Shape: [1, hs]
-                else:
-                    h_stack = torch.stack(h_list, dim=0)  # Shape: [num_predecessors, hs]
-                    h_sum = self._gated(h_stack, gate, mapper).sum(0, keepdim=True)  # Shape: [1, hs]
-                H.append(h_sum)
-            H = torch.cat(H, dim=0)  # Shape: [batch_size, hs]
+            max_n_pred = max([len(x) for x in H_pred])  # maximum number of predecessors
+            if max_n_pred == 0:
+                H = self._get_zero_hidden(len(G))
+            else:
+                H_pred = [torch.cat(h_pred + 
+                            [self._get_zeros(max_n_pred - len(h_pred), self.vs)], 0).unsqueeze(0) 
+                            for h_pred in H_pred]  # pad all to same length
+                H_pred = torch.cat(H_pred, 0)  # batch * max_n_pred * vs
+                H = self._gated(H_pred, gate, mapper).sum(1)  # batch * hs
         Hv = propagator(X, H)
-        for i, g in enumerate(G_valid):
-            # Store hidden state in hidden_states
-            if v not in hidden_states[i]:
-                hidden_states[i][v] = {}
-            hidden_states[i][v][H_name] = Hv[i]  # Shape: [hs]
+        for i, g in enumerate(G):
+            g.vs[v][H_name] = Hv[i:i+1]
+        
         return Hv
 
-
-
-    def _propagate_from(self, G, v_start, propagator, H0=None, reverse=False):
-        # Initialize data structures to hold hidden states
-        hidden_states = [{} for _ in G]  # One dict per graph
+    def _propagate_from(self, G, v, propagator, H0=None, reverse=False):
+        # perform a series of propagation_to steps starting from v following a topo order
+        # assume the original vertex indices are in a topological order
         if reverse:
-            max_v = max([g.vcount() for g in G]) - 1
-            prop_order = range(max_v, -1, -1)
+            prop_order = range(v, -1, -1)
         else:
-            max_v = max([g.vcount() for g in G]) - 1
-            prop_order = range(v_start, max_v + 1)
-        self._propagate_to(G, v_start, propagator, H0, hidden_states, reverse=reverse)
-        for v in prop_order[1:]:
-            self._propagate_to(G, v, propagator, hidden_states=hidden_states, reverse=reverse)
-        return hidden_states
+            prop_order = range(v, self.max_n)
+        Hv = self._propagate_to(G, v, propagator, H0, reverse=reverse)  # the initial vertex
+        for v_ in prop_order[1:]:
+            self._propagate_to(G, v_, propagator, reverse=reverse)
+        return Hv
+
+    def _update_v(self, G, v, H0=None):
+        # perform a forward propagation step at v when decoding to update v's state
+        self._propagate_to(G, v, self.grud, H0, reverse=False)
+        return
+    
+    def _get_vertex_state(self, G, v):
+        # get the vertex states at v
+        Hv = []
+        for g in G:
+            if v >= g.vcount():
+                hv = self._get_zero_hidden()
+            else:
+                hv = g.vs[v]['H_forward']
+            Hv.append(hv)
+        Hv = torch.cat(Hv, 0)
+        return Hv
+
+    def _get_graph_state(self, G, decode=False):
+        # get the graph states
+        # when decoding, use the last generated vertex's state as the graph state
+        # when encoding, use the ending vertex state or unify the starting and ending vertex states
+        Hg = []
+        for g in G:
+            hg = g.vs[g.vcount()-1]['H_forward']
+            if self.bidir and not decode:  # decoding never uses backward propagation
+                hg_b = g.vs[0]['H_backward']
+                hg = torch.cat([hg, hg_b], 1)
+            Hg.append(hg)
+        Hg = torch.cat(Hg, 0)
+        if self.bidir and not decode:
+            Hg = self.hg_unify(Hg)
+
+        return Hg
+
+    def encode(self, G):
+        # encode graphs G into latent vectors
+        if type(G) != list:
+            G = [G]
+        self._propagate_from(G, 0, self.grue_forward, H0=self._get_zero_hidden(len(G)),
+                             reverse=False)
+        if self.bidir:
+            self._propagate_from(G, self.max_n-1, self.grue_backward, 
+                                 H0=self._get_zero_hidden(len(G)), reverse=True)
+        Hg = self._get_graph_state(G)
+        mu = self.fc1(Hg)
+        return mu
 
 
-    def _get_node_states(self, G, hidden_states_forward, hidden_states_backward=None):
-        # Collect node embeddings from all graphs in the batch
-        node_states = []
-        for i, g in enumerate(G):
-            num_nodes = g.vcount()
-            states = []
-            for v in range(num_nodes):
-                if self.bidir:
-                    h_forward = hidden_states_forward[i][v]['H_forward']
-                    h_backward = hidden_states_backward[i][v]['H_backward']
-                    state = torch.cat((h_forward, h_backward), dim=-1)
-                else:
-                    h_forward = hidden_states_forward[i][v]['H_forward']
-                    state = h_forward
-                states.append(state)
-            states = torch.stack(states, dim=0)
-            node_states.append(states)
-        return node_states
-
+    def _get_edge_score(self, Hvi, H, H0):
+        # compute scores for edges from vi based on Hvi, H (current vertex) and H0
+        # in most cases, H0 need not be explicitly included since Hvi and H contain its information
+        return self.sigmoid(self.add_edge(torch.cat([Hvi, H], -1)))
 
 
     def forward(self, G):
-        if type(G) != list:
-            G = [G]
-
-        hidden_states_forward = self._propagate_from(
-            G, 0, self.grue_forward, H0=self._get_zero_hidden(len(G)), reverse=False
-        )
-        if self.bidir:
-            hidden_states_backward = self._propagate_from(
-                G, G[0].vcount()-1 , self.grue_backward, H0=self._get_zero_hidden(len(G)), reverse=True
-            )
-            
-        # Get node-level embeddings
-        node_states = []
-        for i, g in enumerate(G):
-            num_nodes = g.vcount()
-            states = []
-            for v in range(num_nodes):
-                if self.bidir:
-                    h_forward = hidden_states_forward[i][v]['H_forward']
-                    h_backward = hidden_states_backward[i][v]['H_backward']
-                    state = torch.cat((h_forward, h_backward), dim=-1)
-                else:
-                    h_forward = hidden_states_forward[i][v]['H_forward']
-                    state = h_forward
-                states.append(state)
-            states = torch.stack(states, dim=0)
-            node_states.append(states)
-        predictions = []
-
-        for i, (states, g) in enumerate(zip(node_states, G)):
-            preds = self.regression_layer(states).squeeze(-1)  # Shape: [num_nodes]
-            predictions.append(preds)
-
-        Y_hat = torch.stack(predictions, dim=0)  # Shape: [batch_size, num_nodes]
-
-        return Y_hat.unsqueeze(2)
-
+        mu = self.encode(G)
+        return mu.unsqueeze(2)
