@@ -570,3 +570,85 @@ class ParallelMLPSum(nn.Module):
 
 
 
+
+class SMLP(nn.Module):
+    """
+    Implementation of a convolutional layer for DAGs using a Filter Bank.
+
+    This layer applies convolutional operations on DAGs using Graph Shift Operators (GSOs)
+    that capture the particular structure and properties of DAGs.
+    """
+    def __init__(self, in_dim, hid_dim, out_dim, bias):
+        super().__init__()
+
+        # Store parameters
+        self.in_d = in_dim
+        self.out_d = out_dim
+        self.hid_d = hid_dim
+
+        # Initialize learnable parameters
+        # self._init_parameters(bias)
+
+        self.n_inputs = in_dim
+        
+        # Create single shared MLP
+        self.all_mlp = self._create_mlp(in_dim, hid_dim, out_dim, bias)
+        
+        # Calculate number of parameters once during initialization
+        self.n_params = sum(p.numel() for p in self.all_mlp.parameters())
+
+
+
+    def _create_mlp(self, input_dim, hidden_dims, output_dim, bias=True):
+        layers = []
+        # Input layer
+        prev_dim = input_dim
+        
+        # Hidden layers
+        for hidden_dim in hidden_dims:
+            layers.append(nn.Linear(prev_dim, hidden_dim, bias=bias))
+            layers.append(nn.ReLU())
+            prev_dim = hidden_dim
+
+        # Output layer
+        layers.append(nn.Linear(prev_dim, output_dim, bias=bias))
+        
+        return nn.Sequential(*layers)
+
+    def forward(self, X, GSOs):
+        """
+        Performs forward pass through the DAG convolutional layer.
+
+        Args:
+            X (torch.Tensor): Input tensor of size (N, in_dim).
+            GSOs (torch.Tensor): Graph Shift Operators tensor of size (K, N, N).
+
+        Returns:
+            torch.Tensor: Output tensor after convolution of size (N, out_dim).
+        """
+        # assert len(X.shape) == 3 or len(X.shape) == 2, 'Input shape must be (M, N, F_in) or (N, F_in)'
+
+        F_in = self.in_d
+        F_out = self.out_d
+        K = GSOs.shape[0]
+
+
+        if len(X.shape) == 3:  # XW.shape: M x N x 1
+            M = X.shape[0]
+            N = X.shape[1]
+            
+            # Shape of X after reshaping: (N, F_in*M)
+            X_out = GSOs @ X.permute(1, 0, 2).contiguous().view(N, -1)  # Shape: (K, N, F_in*M)
+            # Recover original shape (K, M, N, F_in) and adapt for batch multiplication
+            # X_out = X_out.view(K, N, M, F_in).permute(0, 2, 1, 3).reshape(K, N*M, F_in)
+            X_out = X_out.view(K, N, M, F_in).permute(0, 2, 1, 3).reshape(K*N*M, F_in)
+            X_out = self.all_mlp(X_out)
+            X_out = X_out.view(K, M, N, -1)  # Reshape back to (K, M, N, F_out)
+            X_out = X_out.sum(dim=0)
+
+        return X_out
+
+
+
+
+
