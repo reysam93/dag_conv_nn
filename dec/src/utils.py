@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 from pandas import DataFrame
 from IPython.display import display
 
-from src.arch import DAGConv, FB_DAGConv, ADCN, ParallelMLPSum, SharedMLPSum
+from src.arch import DAGConv, FB_DAGConv, ADCN, ParallelMLPSum, SharedMLPSum, SMLP
 from src.baselines_archs import GAT, MLP, MyGCNN, GraphSAGE, GIN
 import src.dag_utils as dagu
 from src.DAGNN import DVAE, DAGNN
