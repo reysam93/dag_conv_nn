@@ -351,9 +351,14 @@ def get_graph_data(d_dat_p, get_Psi=False):
     return Adj, W, GSOs
 
 
-def DAGNN_prep(adj, X_dict, Y_dict):
+
+
+
+def DAGNN_model(adj, X_dict, Y_dict):
     X_processed = {}
     Y_processed = {}
+
+    adj = adj.T
 
     for label in ['train', 'val', 'test']:
         graph_signal_pairs = []
@@ -378,9 +383,11 @@ def DAGNN_prep(adj, X_dict, Y_dict):
     return X_processed, Y_processed
 
 
-def DVAE_prep(adj, X_dict, Y_dict):
+def DVAE_model(adj, X_dict, Y_dict):
     X_processed = {}
     Y_processed = {}
+
+    adj = adj.T
 
     for label in ['train', 'val', 'test']:
         graph_signal_pairs = []
@@ -390,12 +397,15 @@ def DVAE_prep(adj, X_dict, Y_dict):
 
         for i in range(len(Y)):
             g = ig.Graph(directed=True)
-            g.add_vertices(100)  
-            
+            g.add_vertices(adj.shape[0])  
+            # edges = []
+            # for i in range(adj.shape[0]-1):
+            #     edges.append((i, i+1))
+
             edges = []
-            for row in range(100):
-                for col in range(100):
-                    if adj[row,col] == 1:
+            for row in range(adj.shape[0]):
+                for col in range(adj.shape[0]):
+                    if adj[row,col] != 0:  # Check for any non-zero weight
                         edges.append((row,col))
             g.add_edges(edges)
             for v in g.vs:
@@ -409,3 +419,4 @@ def DVAE_prep(adj, X_dict, Y_dict):
         Y_processed[label] = Y
 
     return X_processed, Y_processed
+
