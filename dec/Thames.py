@@ -246,7 +246,7 @@ def run_exp(d_p, d_arc_args, d_mod_p, exps, verb=True):
                     err[i,j], std[i,j] = model.test(X_data1['test'], Y_data['test'], GSO)
 
                 elif exp['arc_p']['arch'] == DAGNN:
-                    X_data1, Y_data1 = DAGNN_prep(Adj, X_data, Y_data)
+                    X_data1, Y_data1 = DAGNN_model(Adj, X_data, Y_data)
                     GSO = utils.select_GSO(arc_p, GSOs, sel_GSOs, W, Adj)
                     K = GSO.shape[0] if isinstance(GSO, torch.Tensor) and len(GSO.shape) == 3 else 0  
                     arch = utils.instantiate_arch(arc_p, K)      
