@@ -235,7 +235,7 @@ def run_exp(d_p, d_arc_args, d_mod_p, exps, verb=True):
                     err[i,j], std[i,j] = lin_model.test(X_data['test'], Y_data['test'])
 
                 elif exp['arc_p']['arch'] == DVAE:
-                    X_data1 = Thames_exp(Adj, X_data)
+                    X_data1 = DVAE_exp(Adj, X_data)
                     GSO = utils.select_GSO(arc_p, GSOs, sel_GSOs, W, Adj)
                     K = GSO.shape[0] if isinstance(GSO, torch.Tensor) and len(GSO.shape) == 3 else 0  
                     arch = utils.instantiate_arch(arc_p, K)      
@@ -289,22 +289,19 @@ Exps = [
 
     # {'arc_p': {'arch': ParallelMLPSum , 'GSO': 'GSOs', 'n_inputs': 20, 'input_dim': 20, 'hidden_dims': [32], 'output_dim': 20}, 'leg': 'ParallelMLPSum - 1 layer, hid_dim:32'},
     # {'arc_p': {'arch': SharedMLPSum , 'GSO': 'GSOs', 'n_inputs': 20, 'input_dim': 20, 'hidden_dims': [32], 'output_dim': 20}, 'leg': 'SharedMLPSum - 1 layer, hid_dim:32'},
-    # {'arc_p': {'arch': SMLP , 'GSO': 'GSOs', 'in_dim': 1, 'hid_dim': [128], 'out_dim': 1, 'bias' : True }, 'leg': 'Anothertry-128'},
-    # {'arc_p': {'arch': SMLP , 'GSO': 'GSOs', 'in_dim': 1, 'hid_dim': [256], 'out_dim': 1, 'bias' : True }, 'leg': 'Anothertry-128'},
-    # {'arc_p': {'arch': SMLP , 'GSO': 'GSOs', 'in_dim': 1, 'hid_dim': [512], 'out_dim': 1, 'bias' : True }, 'leg': 'Anothertry-128'},
-
-
-    # {'arc_p': {'arch': Anothertry1 , 'GSO': 'GSOs', 'in_dim': 1, 'hid_dim': [128], 'out_dim': 1, 'bias' : True }, 'leg': 'Anothertry1-1-32'},
+    {'arc_p': {'arch': SMLP , 'GSO': 'GSOs', 'in_dim': 1, 'hid_dim': [128], 'out_dim': 1, 'bias' : True }, 'leg': 'SMLP-128'},
+    {'arc_p': {'arch': SMLP , 'GSO': 'GSOs', 'in_dim': 1, 'hid_dim': [256], 'out_dim': 1, 'bias' : True }, 'leg': 'SMLP-256'},
+    {'arc_p': {'arch': SMLP , 'GSO': 'GSOs', 'in_dim': 1, 'hid_dim': [512], 'out_dim': 1, 'bias' : True }, 'leg': 'SMLP-512'},
 
 
     # {'arc_p': {'arch': ParallelMLPSum , 'GSO': 'GSOs', 'n_inputs': 20, 'input_dim': 20, 'hidden_dims': [64], 'output_dim': 20}, 'leg': 'ParallelMLPSum - 1 layer, hid_dim:64'},
     # {'arc_p': {'arch': SharedMLPSum , 'GSO': 'GSOs', 'n_inputs': 20, 'input_dim': 20, 'hidden_dims': [64], 'output_dim': 20}, 'leg': 'SharedMLPSum - 1 layer, hid_dim:64'},
 
 
-    # {'arc_p': {'arch': FB_DAGConv, 'GSO': 'GSOs'}, 'leg': 'DCN'},
-    {'arc_p': {'arch': DAGNN, 'GSO': 'GSOs', 'emb_dim': 1, 'hidden_dim':501, 'out_dim': 501, 'max_n': 20,'nvt':1 ,
-               'START_TYPE': 0, 'END_TYPE': 1, 'hs':501, 'nz': 56, 'agg': "attn_h", 'num_layers':2, 'bidirectional': False, 'out_wx': False, 'out_pool_all': False, 
-               'out_pool': P_MAX, 'dropout': 0, 'num_nodes': 20}, 'leg': 'DAGNN'},
+    {'arc_p': {'arch': FB_DAGConv, 'GSO': 'GSOs'}, 'leg': 'DCN'},
+    # {'arc_p': {'arch': DAGNN, 'GSO': 'GSOs', 'emb_dim': 1, 'hidden_dim':501, 'out_dim': 501, 'max_n': 20,'nvt':1 ,
+    #            'START_TYPE': 0, 'END_TYPE': 1, 'hs':501, 'nz': 56, 'agg': "attn_h", 'num_layers':2, 'bidirectional': False, 'out_wx': False, 'out_pool_all': False, 
+    #            'out_pool': P_MAX, 'dropout': 0, 'num_nodes': 20}, 'leg': 'DAGNN'},
     # {'arc_p': {'arch': DVAE, 'GSO': 'GSOs','max_n':20, 'nvt':1, 'START_TYPE':0, 'END_TYPE':1, 'hs':501,'nz':20, 'bidirectional': True, 'vid': True}, 'leg': 'DVAE'},
 
     # {'arc_p': {'arch': FB_DAGConv, 'GSO': 'rnd_GSOs', 'n_gsos': 15}, 'leg': 'DCN-15'},
