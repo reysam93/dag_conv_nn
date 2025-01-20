@@ -420,3 +420,49 @@ def DVAE_model(adj, X_dict, Y_dict):
 
     return X_processed, Y_processed
 
+
+
+
+
+def Thames_prep(signal,adj):
+
+    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    processed_signals = {}
+    
+
+    for label in ['train', 'val', 'test']:
+        graphs = []
+        signal_tensor = signal[label]
+        n = signal_tensor.shape[1]  # num nodes
+        
+        for j in range(signal_tensor.shape[0]):  # iterate through signals
+            g = ig.Graph(directed=True)
+            g.add_vertices(n)
+            node_types = signal_tensor[j,:,:]
+            for i in range(n):
+                g.vs[i]['scalar_value'] = node_types[i].to(device).item()
+
+            edges = []
+            for row in range(n):
+                for col in range(n):
+                    if adj[row,col] == 1:
+                        edges.append((row,col))
+            g.add_edges(edges)
+
+            graphs.append(g)
+            
+        processed_signals[label] = graphs
+
+    return processed_signals
+
+
+def DVAE_exp(adj, X_data):
+    """
+    A test function that uses a specific 'row' string
+    and returns the corresponding DAG (igraph object) and size.
+    """
+    graphs_list = Thames_prep(X_data, adj)
+
+    X_data = {'train': graphs_list['train'], 'val': graphs_list['val'], 'test': graphs_list['test']}
+
+    return X_data
