@@ -457,10 +457,7 @@ def Thames_prep(signal,adj):
 
 
 def DVAE_exp(adj, X_data):
-    """
-    A test function that uses a specific 'row' string
-    and returns the corresponding DAG (igraph object) and size.
-    """
+
     graphs_list = Thames_prep(X_data, adj)
 
     X_data = {'train': graphs_list['train'], 'val': graphs_list['val'], 'test': graphs_list['test']}
