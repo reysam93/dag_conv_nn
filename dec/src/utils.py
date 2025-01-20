@@ -83,6 +83,7 @@ def select_GSO(arc_p, GSOs, sel_GSOs, W, Adj, sel_GSOs_idx=None):
         return None
     
 
+
 def instantiate_arch(arc_p, K):
     args = arc_p['args']
     if arc_p['arch'] in [DAGConv, FB_DAGConv]:
@@ -101,8 +102,12 @@ def instantiate_arch(arc_p, K):
         args1['nz'] = arc_p['nz'] 
         args1['bidirectional'] = arc_p['bidirectional'] 
         args1['vid'] = arc_p['vid'] 
-        
+
+        # args1['hs'] = arc_p['hs']
+        # args1['bidirectional'] = arc_p['bidirectional'] 
         return arc_p['arch'](**args1)
+
+
 
     elif arc_p['arch'] == DAGNN:
         args2 = {}
@@ -127,6 +132,8 @@ def instantiate_arch(arc_p, K):
 
         return arc_p['arch'](**args2)
 
+
+    
     elif arc_p['arch'] in [ParallelMLPSum, SharedMLPSum]:
         args3 = {}
         args3['n_inputs'] = arc_p['n_inputs'] 
@@ -135,6 +142,20 @@ def instantiate_arch(arc_p, K):
         args3['output_dim'] = arc_p['output_dim'] 
 
         return arc_p['arch'](**args3)
+    
+
+
+    elif arc_p['arch'] in [SMLP] :
+
+        args4 = {}
+        args4['in_dim'] = arc_p['in_dim']
+        args4['hid_dim'] = arc_p['hid_dim']
+        args4['out_dim'] = arc_p['out_dim']
+        args4['bias'] = arc_p['bias']
+
+
+        return arc_p['arch'](**args4)
+
 
     elif arc_p['arch'] not in [ADCN, MyGCNN, MLP, GraphSAGE, GIN]:
         raise ValueError('Unknown architecture type')
