@@ -43,7 +43,7 @@ print(device)
 
 
 
-M = 400
+M = 4000
 
 data_p = {
     'n_tries': 1,  #25,
