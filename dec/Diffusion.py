@@ -17,7 +17,7 @@ from torch_geometric.data import Data
 import src.dag_utils as dagu
 import src.utils as utils
 from src.arch import DAGConv, FB_DAGConv, SF_DAGConv, ADCN, ParallelMLPSum, SharedMLPSum, SMLP
-from src.models import Model, LinDAGRegModel, Model1
+from src.models import Model, LinDAGRegModel
 from src.baselines_archs import GAT, MLP, MyGCNN, GraphSAGE, GIN
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning, module="dgl")
