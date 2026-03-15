@@ -249,10 +249,54 @@ class AlternatingModel(Model):
         self.opt_h = optim(h_params, lr=lr, weight_decay=wd)
         self.opt_W = optim(W_params, lr=lr, weight_decay=wd)
 
-    def _train_epoch(self, train_dl, GSO):
-        # Optimization over h
-        self._train_batches(train_dl, GSO, self.epochs_h, self.opt_h)
         # Optimization over W
         return self._train_batches(train_dl, GSO, self.epochs_W, self.opt_W)
+
+
+class MultiSrcIdModel(Model):
+    def __init__(self, arch, loss=torch.nn.BCEWithLogitsLoss(reduction='mean'), device='cpu'):
+        super(MultiSrcIdModel, self).__init__(arch, loss, device)
+    
+    def test(self, X, labels, GSO=None, k=3):
+        X = X.to(self.dev)
+        labels = labels.to(self.dev)
+        GSO = GSO.to(self.dev) if not self.MLP_arch else None
+
+        # Get list of true source nodes
+        labels = labels.cpu().detach().numpy().squeeze()
+        
+        # Get estimated labels
+        Y_hat = self.arch(X) if self.MLP_arch else self.arch(X, GSO)
+        Y_hat = Y_hat.squeeze()
+        # Apply sigmoid to get probabilities
+        # Y_hat = torch.sigmoid(Y_hat) 
+        # Note: BCEWithLogitsLoss takes logits, so we don't apply sigmoid here for loss 
+        # But for inference (topk) logits are monotonic so order is preserved.
+        
+        # Get top k predictions (indices of highest logits)
+        _, topk_indices = torch.topk(Y_hat, k, dim=1)
+        topk_indices = topk_indices.cpu().detach().numpy()
+        
+        # Verify if predicted indices match the true indices (where labels == 1)
+        # Create a zero matrix and scatter ones at predicted indices
+        predicted_mask = np.zeros_like(labels)
+        rows = np.arange(labels.shape[0])[:, None]
+        predicted_mask[rows, topk_indices] = 1
+        
+        # Check if the predicted mask exactly matches the true labels
+        # Assuming fixed k sources per sample as per experiment design
+        # If labels has varying number of sources, this exact match works for "perfect set prediction"
+        correct = np.all(predicted_mask == labels, axis=1)
+        
+        # Calculate Recall: Fraction of true sources found
+        # Intersection of predicted and true labels
+        intersection = np.sum(predicted_mask * labels, axis=1)
+        # Sum of true labels (should be k, but calculating to be safe)
+        n_true = np.sum(labels, axis=1)
+        # Avoid division by zero
+        n_true[n_true == 0] = 1
+        recall = intersection / n_true
+        
+        return np.mean(correct), np.mean(recall)
         
         

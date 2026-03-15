@@ -8,12 +8,14 @@ import matplotlib.pyplot as plt
 from pandas import DataFrame
 from IPython.display import display
 
-from src.arch import DAGConv, FB_DAGConv, ADCN
+from src.arch import DAGConv, FB_DAGConv, ADCN, NodeParallelMLPSum, NodeSharedMLPSum
 from src.baselines_archs import GAT, MLP, MyGCNN, GraphSAGE, GIN
 import src.dag_utils as dagu
 
 from src.baselines.dagnn import DAGNN
 from torch_geometric.data import Data
+
+
 
 
 def get_graph_data(d_dat_p, get_Psi=False):
@@ -85,7 +87,7 @@ def select_GSO(arc_p, GSOs, sel_GSOs, W, Adj, sel_GSOs_idx=None):
 
 def instantiate_arch(arc_p, K):
     args = arc_p['args']
-    if arc_p['arch'] in [DAGConv, FB_DAGConv]:
+    if arc_p['arch'] in [DAGConv, FB_DAGConv, NodeParallelMLPSum, NodeSharedMLPSum]:
         args['K'] = K
 
     elif arc_p['arch'] == GAT:

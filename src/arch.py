@@ -3,6 +3,7 @@ import torch.nn.functional as F
 import torch
 
 from src.baselines_archs import MLP
+from dec.src.arch import ParallelMLPSum, SharedMLPSum
 
 ###############################   LAYERS   ###############################
 class DAGConvLayer(nn.Module):
@@ -423,3 +424,81 @@ class ADCN(DAGConv):
 
 
 
+
+
+class NodeSharedMLPSum(SharedMLPSum):
+    """
+    Implementation of a DAG Convolutional Neural Network extending SharedMLPSum to 
+    process Node-wise features maintaining cardinality [M, N, Features].
+    """
+    def __init__(self, in_dim: int, hid_dim: int, out_dim: int, K: int, n_layers: int,
+                 bias: bool = True, act = None, l_act = None):
+        
+        # Determine internal layers architecture 
+        hidden_dims = [hid_dim] * max(n_layers - 1, 1)
+
+        # Initialize Base class from RiverThames implementation
+        super(NodeSharedMLPSum, self).__init__(n_inputs=K, input_dim=in_dim, 
+                                               hidden_dims=hidden_dims, output_dim=out_dim)
+        
+        self.K = K
+        self.l_act = l_act
+        
+    def forward(self, X, GSOs):
+        is_unbatched = False
+        if len(X.shape) == 2:
+            X = X.unsqueeze(0)
+            is_unbatched = True
+            
+        outputs = []
+        for k in range(self.K):
+            # Zk shape: (M, N, F_in)
+            Zk = torch.einsum('ij,mjd->mid', GSOs[k], X)
+            # Use shared_mlp inherited from base SharedMLPSum
+            out_k = self.shared_mlp(Zk) 
+            outputs.append(out_k)
+            
+        out = torch.stack(outputs, dim=0).sum(dim=0)
+        
+        if self.l_act is not None:
+            out = self.l_act(out)
+            
+        return out.squeeze(0) if is_unbatched else out
+
+
+class NodeParallelMLPSum(ParallelMLPSum):
+    """
+    Implementation of a DAG Convolutional Neural Network extending ParallelMLPSum to 
+    process Node-wise features maintaining cardinality [M, N, Features].
+    """
+    def __init__(self, in_dim: int, hid_dim: int, out_dim: int, K: int, n_layers: int,
+                 bias: bool = True, act = None, l_act = None):
+        
+        # Determine internal layers architecture 
+        hidden_dims = [hid_dim] * max(n_layers - 1, 1)
+
+        # Initialize Base class from RiverThames implementation
+        super(NodeParallelMLPSum, self).__init__(n_inputs=K, input_dim=in_dim, 
+                                                 hidden_dims=hidden_dims, output_dim=out_dim)
+        self.K = K
+        self.l_act = l_act
+            
+    def forward(self, X, GSOs):
+        is_unbatched = False
+        if len(X.shape) == 2:
+            X = X.unsqueeze(0)
+            is_unbatched = True
+            
+        outputs = []
+        for k in range(self.K):
+            Zk = torch.einsum('ij,mjd->mid', GSOs[k], X)
+            # Use mlps module list inherited from base ParallelMLPSum
+            out_k = self.mlps[k](Zk)
+            outputs.append(out_k)
+            
+        out = torch.stack(outputs, dim=0).sum(dim=0)
+        
+        if self.l_act is not None:
+            out = self.l_act(out)
+            
+        return out.squeeze(0) if is_unbatched else out
